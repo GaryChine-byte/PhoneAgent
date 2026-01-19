@@ -8,8 +8,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
   : '/api/v1'
 
 console.log('API Base URL:', API_BASE_URL)
-console.log('🔧 API Config Version: 2024-12-18-v3-with-monitor')
-
+console.log(' API Config Version: 2024-12-18-v3-with-monitor') 
 // 超时配置（针对不同类型的请求）
 const TIMEOUT_CONFIG = {
   default: 30000,      // 默认 30 秒
@@ -53,6 +52,8 @@ request.interceptors.request.use(
     } else if (config.url?.includes('/diagnostics/')) {
       // 诊断API应该很快
       config.timeout = TIMEOUT_CONFIG.diagnostics
+    } else if (config.url?.includes('/screenshots/')) {
+ // 截图API快速响应       config.timeout = TIMEOUT_CONFIG.diagnostics
     } else if (config.url?.includes('/stream')) {
       config.timeout = TIMEOUT_CONFIG.stream
     }
@@ -60,8 +61,7 @@ request.interceptors.request.use(
     // 开始监控
     requestMonitor.startRequest(requestId, config)
     
-    console.log(`🚀 [${requestId}] ${config.method?.toUpperCase()} ${config.url} (timeout: ${config.timeout}ms)`)
-    
+ console.log(` [${requestId}] ${config.method?.toUpperCase()} ${config.url} (timeout: ${config.timeout}ms)`)     
     // 可以在这里添加 token
     return config
   },
@@ -137,7 +137,7 @@ export const deviceApi = {
   async list(status = null) {
     try {
       // 优先使用V2扫描器API
-      console.log('🔍 DeviceAPI: Calling /devices/scanned')
+      console.log('DeviceAPI: Calling /devices/scanned')
       const scannedDevices = await request.get('/devices/scanned')
       
       // 如果scannedDevices有devices字段，返回devices数组
@@ -207,6 +207,11 @@ export const taskApi = {
   // 批量删除任务
   deleteBatch(taskIds) {
     return request.post('/tasks/delete-batch', { task_ids: taskIds })
+  },
+  
+  // 提交用户答案（唤醒等待中的Agent）
+  submitAnswer(taskId, answer) {
+    return request.post(`/tasks/${taskId}/answer`, { answer })
   }
 }
 
@@ -367,6 +372,92 @@ export const speechApi = {
       console.error('TTS error:', error)
       throw new Error('文字转语音失败')
     }
+  }
+}
+
+// ============================================
+// 截图管理 API 新增 // ============================================
+
+export const screenshotApi = {
+  // 获取任务截图摘要
+  getTaskSummary(taskId) {
+    return request.get(`/screenshots/task/${taskId}/summary`)
+  },
+  
+  // 获取任务的所有步骤截图
+  getTaskScreenshots(taskId) {
+    return request.get(`/screenshots/task/${taskId}/steps`)
+  },
+  
+  // 获取步骤截图URL（带level参数）
+  getStepImageUrl(taskId, stepNumber, level = 'medium') {
+    // level: original | ai | medium | small | thumbnail
+    return `${API_BASE_URL.replace('/api/v1', '')}/api/screenshots/task/${taskId}/step/${stepNumber}/image?level=${level}`
+  },
+  
+  // 获取设备的所有任务
+  getDeviceTasks(deviceId) {
+    return request.get(`/screenshots/device/${deviceId}/tasks`)
+  },
+  
+  // 导出任务
+  async exportTask(taskId) {
+    try {
+      const response = await request.post(`/screenshots/task/${taskId}/export`, null, {
+        responseType: 'blob'
+      })
+      
+      // 创建下载链接
+      const url = window.URL.createObjectURL(new Blob([response]))
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${taskId}.tar.gz`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+      
+      return true
+    } catch (error) {
+      console.error('Export task failed:', error)
+      throw error
+    }
+  },
+  
+  // 获取统计信息
+  getStats() {
+    return request.get('/screenshots/stats')
+  }
+}
+
+// ============================================
+// PC 任务管理 API (新增 - 独立)
+// ============================================
+
+export const pcTaskApi = {
+  // 创建 PC 任务
+  create(data) {
+    return request.post('/pc/tasks', data)
+  },
+  
+  // 获取 PC 任务列表
+  list(params = {}) {
+    return request.get('/pc/tasks', { params })
+  },
+  
+  // 获取 PC 任务详情
+  get(taskId) {
+    return request.get(`/pc/tasks/${taskId}`)
+  },
+  
+  // 取消 PC 任务
+  cancel(taskId) {
+    return request.post(`/pc/tasks/${taskId}/cancel`)
+  },
+  
+  // 获取 PC 设备列表
+  listDevices() {
+    return request.get('/pc/devices')
   }
 }
 

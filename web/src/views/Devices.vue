@@ -51,10 +51,21 @@
         <div class="device-header">
           <div class="device-info">
             <el-icon class="device-icon" :class="getStatusClass(device.status)">
-              <Cellphone />
+              <Monitor v-if="device.device_type === 'pc'" />
+              <Cellphone v-else />
             </el-icon>
             <div class="device-name-section">
-              <h3 class="device-name">{{ device.device_name }}</h3>
+              <h3 class="device-name">
+                {{ device.device_name }}
+                <el-tag 
+                  v-if="device.device_type" 
+                  size="small" 
+                  :type="device.device_type === 'pc' ? 'warning' : 'primary'"
+                  style="margin-left: 8px;"
+                >
+                  {{ device.device_type === 'pc' ? '电脑' : '手机' }}
+                </el-tag>
+              </h3>
               <span class="device-id">{{ device.device_id }}</span>
             </div>
           </div>
@@ -72,18 +83,38 @@
 
         <!-- 连接状态 -->
         <div class="connection-status">
-          <div class="connection-item">
-            <el-icon :style="{color: device.frp_connected ? 'var(--success-color)' : 'var(--text-tertiary)'}">
-              <Connection />
-            </el-icon>
-            <span>FRP {{ device.frp_connected ? '已连接' : '未连接' }}</span>
-          </div>
-          <div class="connection-item">
-            <el-icon :style="{color: device.ws_connected ? 'var(--success-color)' : 'var(--text-tertiary)'}">
-              <Link />
-            </el-icon>
-            <span>WebSocket {{ device.ws_connected ? '已连接' : '未连接' }}</span>
-          </div>
+          <!-- 手机设备显示 FRP + WebSocket -->
+          <template v-if="device.device_type !== 'pc'">
+            <div class="connection-item">
+              <el-icon :style="{color: device.frp_connected ? 'var(--success-color)' : 'var(--text-tertiary)'}">
+                <Connection />
+              </el-icon>
+              <span>FRP {{ device.frp_connected ? '已连接' : '未连接' }}</span>
+            </div>
+            <div class="connection-item">
+              <el-icon :style="{color: device.ws_connected ? 'var(--success-color)' : 'var(--text-tertiary)'}">
+                <Link />
+              </el-icon>
+              <span>WebSocket {{ device.ws_connected ? '已连接' : '未连接' }}</span>
+            </div>
+          </template>
+          
+          <!-- PC 设备：显示 FRP + WebSocket（与手机统一） -->
+          <template v-else>
+            <div class="connection-item">
+              <el-icon :style="{color: device.frp_connected ? 'var(--success-color)' : 'var(--text-tertiary)'}">
+                <Connection />
+              </el-icon>
+              <span>FRP {{ device.frp_connected ? '已连接' : '未连接' }}</span>
+            </div>
+            <div class="connection-item">
+              <el-icon :style="{color: device.ws_connected ? 'var(--success-color)' : 'var(--text-tertiary)'}">
+                <Link />
+              </el-icon>
+              <span>WebSocket {{ device.ws_connected ? '已连接' : '未连接' }}</span>
+            </div>
+          </template>
+          
           <div class="connection-item" v-if="device.method">
             <el-tag size="small" :type="device.method === 'port_scanning' ? 'success' : 'info'">
               {{ device.method === 'port_scanning' ? '端口扫描' : 'WebSocket注册' }}
@@ -91,16 +122,33 @@
           </div>
         </div>
 
-        <!-- 设备信息（只显示成功获取的字段） -->
+        <!-- 设备信息（根据设备类型显示不同字段） -->
         <div class="device-details">
-          <div class="detail-item" v-if="device.model">
-            <el-icon><Monitor /></el-icon>
-            <span>{{ device.model }}</span>
-          </div>
-          <div class="detail-item" v-if="device.android_version">
-            <el-icon><Platform /></el-icon>
-            <span>Android {{ device.android_version }}</span>
-          </div>
+          <!-- 手机设备字段 -->
+          <template v-if="device.device_type !== 'pc'">
+            <div class="detail-item" v-if="device.model">
+              <el-icon><Monitor /></el-icon>
+              <span>{{ device.model }}</span>
+            </div>
+            <div class="detail-item" v-if="device.android_version">
+              <el-icon><Platform /></el-icon>
+              <span>Android {{ device.android_version }}</span>
+            </div>
+          </template>
+          
+          <!-- PC 设备字段 -->
+          <template v-if="device.device_type === 'pc'">
+            <div class="detail-item" v-if="device.os_info">
+              <el-icon><Platform /></el-icon>
+              <span>{{ device.os_info.platform }} {{ device.os_info.version }}</span>
+            </div>
+            <div class="detail-item" v-if="device.model">
+              <el-icon><Monitor /></el-icon>
+              <span>{{ device.model }}</span>
+            </div>
+          </template>
+          
+          <!-- 通用字段 -->
           <div class="detail-item" v-if="device.screen_resolution">
             <el-icon><Odometer /></el-icon>
             <span>{{ device.screen_resolution }}</span>
@@ -111,27 +159,48 @@
           </div>
         </div>
 
-        <!-- 电池和端口 -->
+        <!-- 设备指标（根据设备类型区分） -->
         <el-row :gutter="12" class="device-metrics">
-          <el-col :span="12" v-if="device.battery !== null && device.battery !== undefined">
-            <div class="metric-item">
-              <el-icon><Odometer /></el-icon>
-              <span>电量</span>
-              <el-progress
-                :percentage="device.battery"
-                :color="getBatteryColor(device.battery)"
-                :stroke-width="8"
-                :show-text="true"
-              />
-            </div>
-          </el-col>
-          <el-col :span="device.battery !== null && device.battery !== undefined ? 12 : 24">
-            <div class="metric-item">
-              <el-icon><Connection /></el-icon>
-              <span>FRP端口</span>
-              <div class="port-value">{{ device.frp_port }}</div>
-            </div>
-          </el-col>
+          <!-- 手机设备：显示电池和端口 -->
+          <template v-if="device.device_type !== 'pc'">
+            <el-col :span="12" v-if="device.battery !== null && device.battery !== undefined">
+              <div class="metric-item">
+                <el-icon><Odometer /></el-icon>
+                <span>电量</span>
+                <el-progress
+                  :percentage="device.battery"
+                  :color="getBatteryColor(device.battery)"
+                  :stroke-width="8"
+                  :show-text="true"
+                />
+              </div>
+            </el-col>
+            <el-col :span="device.battery !== null && device.battery !== undefined ? 12 : 24">
+              <div class="metric-item">
+                <el-icon><Connection /></el-icon>
+                <span>FRP端口</span>
+                <div class="port-value">{{ device.frp_port }}</div>
+              </div>
+            </el-col>
+          </template>
+          
+          <!-- PC 设备：显示端口和系统信息 -->
+          <template v-if="device.device_type === 'pc'">
+            <el-col :span="12" v-if="device.frp_port">
+              <div class="metric-item">
+                <el-icon><Connection /></el-icon>
+                <span>FRP端口</span>
+                <div class="port-value">{{ device.frp_port }}</div>
+              </div>
+            </el-col>
+            <el-col :span="12" v-if="device.os_info && device.os_info.machine">
+              <div class="metric-item">
+                <el-icon><Monitor /></el-icon>
+                <span>架构</span>
+                <div class="port-value">{{ device.os_info.machine }}</div>
+              </div>
+            </el-col>
+          </template>
         </el-row>
 
         <!-- 任务统计 -->
@@ -176,11 +245,17 @@
       :fullscreen="isMobile"
     >
       <el-descriptions v-if="selectedDevice" :column="1" border>
+        <!-- 基本信息（通用） -->
         <el-descriptions-item label="设备ID">
           {{ selectedDevice.device_id }}
         </el-descriptions-item>
         <el-descriptions-item label="设备名称">
           {{ selectedDevice.device_name }}
+        </el-descriptions-item>
+        <el-descriptions-item label="设备类型">
+          <el-tag :type="selectedDevice.device_type === 'pc' ? 'warning' : 'primary'">
+            {{ selectedDevice.device_type === 'pc' ? '电脑' : '手机' }}
+          </el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="状态">
           <div style="display: flex; gap: 8px; align-items: center;">
@@ -193,34 +268,64 @@
             </div>
           </div>
         </el-descriptions-item>
-        <el-descriptions-item label="FRP 端口">
-          {{ selectedDevice.frp_port }}
-        </el-descriptions-item>
-        <el-descriptions-item label="ADB 地址">
-          {{ selectedDevice.adb_address }}
-        </el-descriptions-item>
-        <el-descriptions-item label="型号" v-if="selectedDevice.model">
-          {{ selectedDevice.model }}
-        </el-descriptions-item>
-        <el-descriptions-item label="Android 版本" v-if="selectedDevice.android_version">
-          {{ selectedDevice.android_version }}
-        </el-descriptions-item>
-        <el-descriptions-item label="屏幕分辨率" v-if="selectedDevice.screen_resolution">
+        
+        <!-- 手机设备专属字段 -->
+        <template v-if="selectedDevice.device_type !== 'pc'">
+          <el-descriptions-item label="FRP 端口">
+            {{ selectedDevice.frp_port }}
+          </el-descriptions-item>
+          <el-descriptions-item label="ADB 地址">
+            {{ selectedDevice.adb_address }}
+          </el-descriptions-item>
+          <el-descriptions-item label="型号" v-if="selectedDevice.model">
+            {{ selectedDevice.model }}
+          </el-descriptions-item>
+          <el-descriptions-item label="Android 版本" v-if="selectedDevice.android_version">
+            {{ selectedDevice.android_version }}
+          </el-descriptions-item>
+          <el-descriptions-item label="电池电量" v-if="selectedDevice.battery !== null && selectedDevice.battery !== undefined">
+            {{ selectedDevice.battery }}%
+          </el-descriptions-item>
+          <el-descriptions-item label="FRP 连接">
+            <el-tag :type="selectedDevice.frp_connected ? 'success' : 'info'">
+              {{ selectedDevice.frp_connected ? '已连接' : '未连接' }}
+            </el-tag>
+          </el-descriptions-item>
+        </template>
+        
+        <!-- PC 设备专属字段 -->
+        <template v-if="selectedDevice.device_type === 'pc'">
+          <el-descriptions-item label="FRP 端口">
+            {{ selectedDevice.frp_port }}
+          </el-descriptions-item>
+          <el-descriptions-item label="FRP 连接">
+            <el-tag :type="selectedDevice.frp_connected ? 'success' : 'info'">
+              {{ selectedDevice.frp_connected ? '已连接' : '未连接' }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="操作系统" v-if="selectedDevice.os_info">
+            {{ selectedDevice.os_info.system }} {{ selectedDevice.os_info.release }}
+          </el-descriptions-item>
+          <el-descriptions-item label="系统架构" v-if="selectedDevice.os_info && selectedDevice.os_info.machine">
+            {{ selectedDevice.os_info.machine }}
+          </el-descriptions-item>
+          <el-descriptions-item label="处理器" v-if="selectedDevice.os_info && selectedDevice.os_info.processor">
+            {{ selectedDevice.os_info.processor }}
+          </el-descriptions-item>
+          <el-descriptions-item label="主机名" v-if="selectedDevice.model">
+            {{ selectedDevice.model }}
+          </el-descriptions-item>
+        </template>
+        
+        <!-- 通用字段 -->
+        <el-descriptions-item label="屏幕分辨率" v-if="selectedDevice.screen_resolution && selectedDevice.screen_resolution !== 'unknown'">
           {{ selectedDevice.screen_resolution }}
-        </el-descriptions-item>
-        <el-descriptions-item label="电池电量" v-if="selectedDevice.battery !== null && selectedDevice.battery !== undefined">
-          {{ selectedDevice.battery }}%
         </el-descriptions-item>
         <el-descriptions-item label="内存" v-if="selectedDevice.memory_total">
           {{ selectedDevice.memory_available || '?' }} / {{ selectedDevice.memory_total }}
         </el-descriptions-item>
         <el-descriptions-item label="存储" v-if="selectedDevice.storage_total">
           {{ selectedDevice.storage_available || '?' }} / {{ selectedDevice.storage_total }}
-        </el-descriptions-item>
-        <el-descriptions-item label="FRP 连接">
-          <el-tag :type="selectedDevice.frp_connected ? 'success' : 'info'">
-            {{ selectedDevice.frp_connected ? '已连接' : '未连接' }}
-          </el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="WebSocket 连接">
           <el-tag :type="selectedDevice.ws_connected ? 'success' : 'info'">
@@ -265,7 +370,8 @@ import {
   Platform,
   Odometer,
   Loading,
-  Picture
+  Picture,
+  Cpu
 } from '@element-plus/icons-vue'
 import { useDeviceStore } from '@/stores/device'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -330,6 +436,13 @@ function getStatusText(status) {
 // 设备状态判断函数
 function getDeviceStatusType(device) {
   if (device.status !== 'online') return 'info'
+  
+  // PC 设备：只看 WebSocket
+  if (device.device_type === 'pc') {
+    return device.ws_connected ? 'success' : 'info'
+  }
+  
+  // 手机设备：看双连接
   if (device.frp_connected && device.ws_connected) return 'success'
   if (device.frp_connected && !device.ws_connected) return 'success' // FRP连接就是可用状态
   return 'info'
@@ -337,8 +450,15 @@ function getDeviceStatusType(device) {
 
 function getDeviceStatusText(device) {
   if (device.status !== 'online') return '离线'
+  
+  // PC 设备：只看 WebSocket
+  if (device.device_type === 'pc') {
+    return device.ws_connected ? '在线' : '离线'
+  }
+  
+  // 手机设备：看双连接
   if (device.frp_connected && device.ws_connected) return '完全连接'
-  if (device.frp_connected && !device.ws_connected) return '已连接' // 改为更友好的显示
+  if (device.frp_connected && !device.ws_connected) return '已连接'
   return '离线'
 }
 

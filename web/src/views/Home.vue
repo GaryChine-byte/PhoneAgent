@@ -30,20 +30,60 @@
                   </el-radio-button>
                   <el-radio-button value="planning">
                     <el-icon><Lightning /></el-icon>
-                    智能规划（⚠️ Beta - 不稳定）
-                  </el-radio-button>
+ 智能规划（ 已优化）                   </el-radio-button>
                 </el-radio-group>
                 <div class="mode-description">
                   <div v-if="taskForm.execution_mode === 'step_by_step'" class="mode-hint mode-hint-success">
                     <el-icon><InfoFilled /></el-icon>
-                    ✅ 推荐：AI每步思考并决策，稳定性高，适合所有任务
-                  </div>
-                  <div v-else class="mode-hint mode-hint-warning">
+ 推荐：AI每步思考并决策，稳定性高，适合所有任务                   </div>
+                  <div v-else class="mode-hint mode-hint-info">
                     <el-icon><InfoFilled /></el-icon>
-                    ⚠️ 警告：规划模式仍在实验阶段，成功率较低，不建议生产环境使用，仅适合简单任务测试
+ 已优化：支持智能元素定位、混合验证（XML+Vision）、失败重试、人机协同，适合简单重复任务                   </div>
+                </div>
+              </el-form-item>
+
+ <!-- 内核模式选择（仅在逐步执行模式显示） -->               <el-form-item v-if="taskForm.execution_mode === 'step_by_step' && selectedDeviceType === 'mobile'" label="内核模式">
+                <el-radio-group v-model="taskForm.kernel_mode" @change="handleKernelModeChange">
+                  <el-radio-button value="auto">
+                    <el-icon><MagicStick /></el-icon>
+                    智能混合（推荐）
+                  </el-radio-button>
+                  <el-radio-button value="xml">
+                    <el-icon><Lightning /></el-icon>
+                    XML 快速
+                  </el-radio-button>
+                  <el-radio-button value="vision">
+                    <el-icon><View /></el-icon>
+                    Vision 稳定
+                  </el-radio-button>
+                </el-radio-group>
+                <div class="mode-description">
+                  <div v-if="taskForm.kernel_mode === 'auto'" class="mode-hint mode-hint-success">
+                    <el-icon><InfoFilled /></el-icon>
+ 推荐：XML 优先执行（快10倍+便宜95%），失败自动切换 Vision（稳定兜底）                   </div>
+                  <div v-else-if="taskForm.kernel_mode === 'xml'" class="mode-hint mode-hint-warning">
+                    <el-icon><InfoFilled /></el-icon>
+ XML 模式：速度快、成本低（Beta），适合原生应用操作，复杂界面可能失败                   </div>
+                  <div v-else class="mode-hint mode-hint-info">
+                    <el-icon><InfoFilled /></el-icon>
+                    🛡️ Vision 模式：稳定可靠，适用所有界面，但速度较慢、成本较高
                   </div>
                 </div>
               </el-form-item>
+
+              <!-- PC 设备提示 (新增) -->
+              <el-alert
+                v-if="selectedDeviceType === 'pc'"
+                type="info"
+                :closable="false"
+                show-icon
+                style="margin-bottom: 16px;"
+              >
+                <template #title>
+                  PC 设备自动使用 Vision 模式
+                </template>
+                PC 设备通过屏幕截图和可访问性树进行操作，确保稳定性和兼容性。
+              </el-alert>
 
               <!-- 任务指令输入 -->
               <el-form-item label="任务指令">
@@ -58,8 +98,7 @@
                 />
               </el-form-item>
               
-              <!-- 规划模式专属选项 🆕 -->
-              <div v-if="taskForm.execution_mode === 'planning'" class="planning-options">
+ <!-- 规划模式专属选项 -->               <div v-if="taskForm.execution_mode === 'planning'" class="planning-options">
                 <el-form-item label="计划预览">
                   <el-switch
                     v-model="taskForm.preview_plan"
@@ -67,8 +106,7 @@
                     inactive-text="直接生成并执行"
                   />
                   <div class="form-hint-text">
-                    💡 开启后可以查看和编辑AI生成的计划，确认无误后再执行
-                  </div>
+ 开启后可以查看和编辑AI生成的计划，确认无误后再执行                   </div>
                 </el-form-item>
               </div>
 
@@ -82,6 +120,7 @@
                     class="device-selector"
                     clearable
                     popper-class="home-device-select-dropdown"
+                    @change="handleDeviceChange"
                   >
                     <el-option
                       v-for="device in availableDevices"
@@ -91,7 +130,24 @@
                     >
                       <div class="home-device-option">
                         <div class="home-device-option-left">
+                          <!-- 新增: 设备类型图标 -->
+                          <el-icon v-if="device.device_type === 'pc'" style="margin-right: 8px;">
+                            <Monitor />
+                          </el-icon>
+                          <el-icon v-else style="margin-right: 8px;">
+                            <Cellphone />
+                          </el-icon>
+                          
                           <span class="home-device-name">{{ device.device_name || device.device_id }}</span>
+                          
+                          <!-- 新增: 设备类型标签 -->
+                          <el-tag 
+                            size="small" 
+                            :type="device.device_type === 'pc' ? 'warning' : 'primary'"
+                            style="margin-left: 8px;"
+                          >
+                            {{ device.device_type === 'pc' ? 'PC' : '手机' }}
+                          </el-tag>
                         </div>
                         <div class="home-device-option-right">
                           <el-tag :type="getDeviceStatusType(device)" size="small">
@@ -245,8 +301,7 @@
                 <span>{{ transcriptionProgress }}</span>
               </div>
 
-              <!-- ✅ 移除高级选项：所有配置由后端环境变量控制 -->
-              <!-- 最大执行步数、AI模型配置、API Key 等均在服务端 .env 文件配置 -->
+ <!-- 移除高级选项：所有配置由后端环境变量控制 -->               <!-- 最大执行步数、AI模型配置、API Key 等均在服务端 .env 文件配置 -->
             </el-form>
           </el-card>
         </div>
@@ -318,13 +373,14 @@
       @use-card="handleUseCard"
     />
 
-    <!-- 🆕 计划预览对话框 -->
-    <PlanPreviewDialog
+ <!-- 计划预览对话框 -->     <PlanPreviewDialog
       v-model="showPlanPreview"
       :plan="generatedPlan"
       :is-mobile="isMobile"
       @execute="executePlan"
     />
+
+ <!-- 人机协同对话框 -->     <HumanInterventionDialog />
   </div>
 </template>
 
@@ -363,7 +419,7 @@ import { useRouter } from 'vue-router'
 import { useTaskStore } from '@/stores/task'
 import { useDeviceStore } from '@/stores/device'
 import { useWebSocketStore } from '@/stores/websocket'
-import { speechApi, shortcutApi, planningApi } from '@/api'
+import { speechApi, shortcutApi, planningApi, pcTaskApi } from '@/api'
 import { request } from '@/api/index'
 import TopNavigation from '@/components/TopNavigation.vue'
 import ShortcutsManager from '@/components/ShortcutsManager.vue'
@@ -371,6 +427,7 @@ import PromptCardsManager from '@/components/PromptCardsManager.vue'
 import LivePreview from '@/components/LivePreview.vue'
 import TaskRealTimePreview from '@/components/TaskRealTimePreview.vue'
 import PlanPreviewDialog from '@/components/PlanPreviewDialog.vue'
+import HumanInterventionDialog from '@/components/HumanInterventionDialog.vue'
 
 const router = useRouter()
 const taskStore = useTaskStore()
@@ -381,15 +438,18 @@ const wsStore = useWebSocketStore()
 const taskForm = ref({
   instruction: '',
   device_id: null,
-  // ✅ 移除所有配置项（由后端环境变量控制）
-  // max_steps, speech_platform, speech_api_key 等均由服务端配置
+ // 移除所有配置项（由后端环境变量控制）   // max_steps, speech_platform, speech_api_key 等均由服务端配置
   prompt_card_ids: [],  // 选中的提示词卡片ID列表
   execution_mode: 'step_by_step',  // 执行模式: 'step_by_step' | 'planning'
-  preview_plan: true  // 规划模式是否预览计划
+  preview_plan: true,  // 规划模式是否预览计划
+  kernel_mode: 'auto'  // 内核模式: 'auto' | 'xml' | 'vision'
 })
 
 // 当前任务ID(用于实时预览)
 const currentTaskId = ref(null)
+
+// PC 设备支持 (新增)
+const selectedDeviceType = ref('mobile')  // 当前选中的设备类型
 
 // 快捷指令相关
 const shortcuts = ref([])
@@ -405,17 +465,12 @@ const promptCardsManagerVisible = ref(false)
 // 获取分类图标
 const getCategoryIcon = (category) => {
   const iconMap = {
-    '社交': '💬',
-    '娱乐': '🎮',
-    '生活': '🏠',
+ '社交': '',  '娱乐': '',     '生活': '🏠',
     '支付': '💰',
     '购物': '🛒',
     '出行': '🚗',
-    '工具': '🔧',
-    '自定义': '⚡'
-  }
-  return iconMap[category] || '⚡'
-}
+ '工具': '',  '自定义': ''   }
+ return iconMap[category] || '' }
 
 // 显示的快捷指令（前8个）
 const displayShortcuts = computed(() => {
@@ -532,8 +587,7 @@ const availableDevices = computed(() => deviceStore.availableDevices)
 // 移动端检测
 const isMobile = computed(() => window.innerWidth <= 768)
 
-// ✅ 移除所有选项配置（由后端环境变量控制）
-
+// 移除所有选项配置（由后端环境变量控制） 
 // 统计数据
 const deviceStats = computed(() => wsStore.deviceStats || {})
 const taskStats = computed(() => wsStore.taskStats || {})
@@ -742,27 +796,113 @@ const transcribeAudio = async (audioBlob) => {
 const isSubmitting = ref(false)
 const isCreatingTask = ref(false)
 
-// 🆕 规划模式相关状态
-const generatedPlan = ref(null)  // 生成的计划
+// 规划模式相关状态 const generatedPlan = ref(null)  // 生成的计划
 const showPlanPreview = ref(false)  // 显示计划预览对话框
 const isGeneratingPlan = ref(false)  // 正在生成计划
+
+// 监听设备选择变化 (新增 - 用于 PC 设备检测)
+const handleDeviceChange = (deviceId) => {
+  console.log('[handleDeviceChange] 选择设备:', deviceId)
+  
+  if (!deviceId) {
+    selectedDeviceType.value = 'mobile'
+    console.log('[handleDeviceChange] 清空选择，设置为 mobile')
+    return
+  }
+  
+  const device = deviceStore.devices.find(d => d.device_id === deviceId)
+  console.log('[handleDeviceChange] 找到设备:', device)
+  
+  if (device) {
+    selectedDeviceType.value = device.device_type || 'mobile'
+    console.log('[handleDeviceChange] 设备类型:', device.device_type, '→ selectedDeviceType:', selectedDeviceType.value)
+    
+    // PC 设备自动调整设置
+    if (selectedDeviceType.value === 'pc') {
+      // PC 强制使用 vision 模式
+      taskForm.value.kernel_mode = 'vision'
+      // PC 只支持逐步执行
+      taskForm.value.execution_mode = 'step_by_step'
+      console.log('[handleDeviceChange] PC 设备，调整为 vision 模式和逐步执行')
+    }
+  }
+}
 
 // 新的任务创建方法(用于设备选择行的按钮)
 const handleCreateTask = async () => {
   isCreatingTask.value = true
   try {
-    // 🆕 根据执行模式调用不同的方法
-    if (taskForm.value.execution_mode === 'planning') {
-      await handlePlanningMode()
+    // ✅ 动态获取当前选中设备的类型（不依赖缓存的 selectedDeviceType）
+    let deviceType = 'mobile'
+    if (taskForm.value.device_id) {
+      const device = deviceStore.devices.find(d => d.device_id === taskForm.value.device_id)
+      console.log('[handleCreateTask] 选中设备:', taskForm.value.device_id)
+      console.log('[handleCreateTask] 设备对象:', device)
+      
+      if (device) {
+        deviceType = device.device_type || 'mobile'
+        console.log('[handleCreateTask] 设备类型:', device.device_type, '→ deviceType:', deviceType)
+      } else {
+        console.warn('[handleCreateTask] ❌ 未找到设备！')
+      }
+    }
+    
+    // 根据设备类型选择不同的创建流程
+    console.log('[handleCreateTask] 最终判断 - deviceType:', deviceType)
+    if (deviceType === 'pc') {
+      console.log('[handleCreateTask] ✅ 调用 PC 任务 API')
+      await handlePCTask()
     } else {
-      await submitTask()
+      console.log('[handleCreateTask] ✅ 调用手机任务 API')
+      // 保持原有的手机任务创建流程不变
+      if (taskForm.value.execution_mode === 'planning') {
+        await handlePlanningMode()
+      } else {
+        await submitTask()
+      }
     }
   } finally {
     isCreatingTask.value = false
   }
 }
 
-// 🆕 处理规划模式
+// 处理 PC 任务创建 (新增)
+const handlePCTask = async () => {
+  if (!taskForm.value.instruction) {
+    ElMessage.warning('请输入任务指令')
+    return
+  }
+  
+  if (!taskForm.value.device_id) {
+    ElMessage.warning('请选择 PC 设备')
+    return
+  }
+  
+  try {
+    const response = await pcTaskApi.create({
+      instruction: taskForm.value.instruction,
+      device_id: taskForm.value.device_id,
+      kernel_mode: 'vision',  // PC 固定使用 vision
+      max_steps: 30
+    })
+    
+    ElMessage.success('PC 任务创建成功')
+    
+    // 设置当前任务ID用于实时预览
+    currentTaskId.value = response.task_id
+    
+    // 清空表单
+    taskForm.value.instruction = ''
+    
+    // 刷新任务列表
+    await taskStore.fetchTasks()
+  } catch (error) {
+    console.error('创建 PC 任务失败:', error)
+    ElMessage.error(error.response?.data?.detail || '创建 PC 任务失败')
+  }
+}
+
+// 处理规划模式
 const handlePlanningMode = async () => {
   if (!taskForm.value.instruction) {
     ElMessage.warning('请输入任务指令')
@@ -771,9 +911,7 @@ const handlePlanningMode = async () => {
   
   // 自动选择设备
   if (!taskForm.value.device_id) {
-    const fullyConnectedDevices = deviceStore.devices.filter(d => 
-      d.status === 'online' && d.frp_connected && d.ws_connected
-    )
+    const fullyConnectedDevices = deviceStore.devices.filter(isDeviceFullyConnected)
     if (fullyConnectedDevices.length > 0) {
       taskForm.value.device_id = fullyConnectedDevices[0].device_id
     } else {
@@ -790,14 +928,14 @@ const handlePlanningMode = async () => {
   }
 }
 
-// 🆕 生成并预览计划
+// 生成并预览计划
 const generateAndPreviewPlan = async () => {
   isGeneratingPlan.value = true
   try {
     const result = await planningApi.generate({
       instruction: taskForm.value.instruction,
       device_id: taskForm.value.device_id,
-      // ✅ 移除 model_config，完全由后端环境变量控制
+      // 移除 model_config，完全由后端环境变量控制
       prompt_cards: getSelectedPromptCardNames()
     })
     
@@ -813,13 +951,13 @@ const generateAndPreviewPlan = async () => {
   }
 }
 
-// 🆕 直接执行（不预览）
+// 直接执行（不预览）
 const executeDirectly = async () => {
   try {
     const result = await planningApi.executeDirect({
       instruction: taskForm.value.instruction,
       device_id: taskForm.value.device_id,
-      // ✅ 移除 model_config，完全由后端环境变量控制
+      // 移除 model_config，完全由后端环境变量控制
       prompt_cards: getSelectedPromptCardNames()
     })
     
@@ -840,22 +978,22 @@ const executeDirectly = async () => {
   }
 }
 
-// 🆕 执行已生成的计划
+// 执行已生成的计划
 const executePlan = async () => {
   if (!generatedPlan.value) return
   
-  // ✅ 验证并自动选择设备（与 submitTask 逻辑一致）
+  // 验证并自动选择设备（与 submitTask 逻辑一致）
   if (!taskForm.value.device_id) {
-    const fullyConnectedDevices = deviceStore.devices.filter(d => 
-      d.status === 'online' && d.frp_connected && d.ws_connected
-    )
+    const fullyConnectedDevices = deviceStore.devices.filter(isDeviceFullyConnected)
     if (fullyConnectedDevices.length > 0) {
       taskForm.value.device_id = fullyConnectedDevices[0].device_id
       ElMessage.info(`已自动选择设备: ${fullyConnectedDevices[0].device_name || fullyConnectedDevices[0].device_id}`)
     } else {
-      const partialDevices = deviceStore.devices.filter(d => 
-        d.status === 'online' && d.frp_connected && !d.ws_connected
-      )
+      const partialDevices = deviceStore.devices.filter(d => {
+        if (d.status !== 'online') return false
+        if (d.device_type === 'pc') return false
+        return d.frp_connected && !d.ws_connected
+      })
       if (partialDevices.length > 0) {
         ElMessage.warning('设备FRP已连接但WebSocket未连接，请检查WebSocket配置')
       } else {
@@ -866,20 +1004,17 @@ const executePlan = async () => {
   }
   
   try {
-    console.log('🚀 Executing plan with device:', taskForm.value.device_id)
+    console.log('Executing plan with device:', taskForm.value.device_id)
     const result = await planningApi.execute({
       plan: generatedPlan.value,
       device_id: taskForm.value.device_id
     })
     
-    console.log('✅ Plan execution result:', result)
-    
+    console.log('Plan execution result:', result)
     if (result && result.task_id) {
       currentTaskId.value = result.task_id
-      console.log('📋 Task ID set:', result.task_id)
-    } else {
-      console.warn('⚠️ No task_id in result:', result)
-    }
+ console.log(' Task ID set:', result.task_id)     } else {
+ console.warn(' No task_id in result:', result)     }
     
     showPlanPreview.value = false
     generatedPlan.value = null
@@ -892,12 +1027,12 @@ const executePlan = async () => {
     
     taskForm.value.instruction = ''
   } catch (error) {
-    console.error('❌ Plan execution failed:', error)
+    console.error('Plan execution failed:', error)
     ElMessage.error('计划执行失败：' + (error.message || '未知错误'))
   }
 }
 
-// 🆕 获取选中的提示词卡片名称
+// 获取选中的提示词卡片名称
 const getSelectedPromptCardNames = () => {
   if (!promptCardsEnabled.value || taskForm.value.prompt_card_ids.length === 0) {
     return []
@@ -908,17 +1043,49 @@ const getSelectedPromptCardNames = () => {
     .map(card => card.name || card.title)
 }
 
-// 🆕 模式切换处理
+// 模式切换处理
 const handleModeChange = (mode) => {
   console.log('执行模式切换:', mode)
   if (mode === 'planning') {
     ElMessage.warning({
-      message: '⚠️ 规划模式仍在实验阶段，成功率较低，建议先使用逐步执行模式',
+      message: '规划模式仍在实验阶段，成功率较低，建议先使用逐步执行模式',
       duration: 5000
     })
   } else {
     ElMessage.success('已切换到逐步执行模式，精确度更高，稳定性好')
   }
+}
+
+// 内核模式切换处理
+const handleKernelModeChange = (mode) => {
+  console.log('内核模式切换:', mode)
+  if (mode === 'auto') {
+    ElMessage.success({
+ message: ' 智能混合模式：XML 快速执行，失败自动切换 Vision 兜底',       duration: 4000
+    })
+  } else if (mode === 'xml') {
+    ElMessage.warning({
+ message: ' XML 快速模式：速度快10倍，成本低95%，但 Beta 阶段可能不稳定',       duration: 4000
+    })
+  } else {
+    ElMessage.info({
+      message: '🛡️ Vision 稳定模式：适用所有界面，推荐生产环境使用',
+      duration: 4000
+    })
+  }
+}
+
+// 判断设备是否完全连接
+const isDeviceFullyConnected = (device) => {
+  if (device.status !== 'online') return false
+  
+  // PC 设备：只需要 WebSocket 连接
+  if (device.device_type === 'pc') {
+    return device.ws_connected
+  }
+  
+  // 手机设备：需要 FRP + WebSocket 双连接
+  return device.frp_connected && device.ws_connected
 }
 
 const submitTask = async () => {
@@ -929,16 +1096,18 @@ const submitTask = async () => {
   
   // 如果没有选择设备，自动选择第一个完全连接的设备
   if (!taskForm.value.device_id) {
-    const fullyConnectedDevices = deviceStore.devices.filter(d => 
-      d.status === 'online' && d.frp_connected && d.ws_connected
-    )
+    const fullyConnectedDevices = deviceStore.devices.filter(isDeviceFullyConnected)
     if (fullyConnectedDevices.length > 0) {
       taskForm.value.device_id = fullyConnectedDevices[0].device_id
       ElMessage.info(`已自动选择设备: ${fullyConnectedDevices[0].device_name || fullyConnectedDevices[0].device_id}`)
     } else {
-      const partialDevices = deviceStore.devices.filter(d => 
-        d.status === 'online' && d.frp_connected && !d.ws_connected
-      )
+      const partialDevices = deviceStore.devices.filter(d => {
+        if (d.status !== 'online') return false
+        // PC 设备不存在"部分连接"状态
+        if (d.device_type === 'pc') return false
+        // 手机设备：FRP 连接但 WebSocket 未连接
+        return d.frp_connected && !d.ws_connected
+      })
       if (partialDevices.length > 0) {
         ElMessage.warning('设备FRP已连接但WebSocket未连接，请检查WebSocket配置')
       } else {
@@ -1024,7 +1193,7 @@ const formatTime = (timestamp) => {
   return `${Math.floor(diff / 86400)}天前`
 }
 
-// 🆕 计划预览辅助方法
+// 计划预览辅助方法
 const getComplexityType = (complexity) => {
   const typeMap = {
     simple: 'success',
@@ -1726,6 +1895,13 @@ onUnmounted(() => {
 .home-device-option-left {
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.home-device-option-left .el-icon {
+  font-size: 16px;
+  flex-shrink: 0;
 }
 
 .home-device-name {

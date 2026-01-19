@@ -172,15 +172,14 @@ class DevicePool:
         
         从 WebSocket Server 实时查询设备信息
         
-        🔒 并发安全：使用锁保护缓存读写，防止数据竞争
-        
+ 并发安全：使用锁保护缓存读写，防止数据竞争         
         Args:
             device_id: 设备 ID
         
         Returns:
             设备对象（如果不存在则返回 None）
         """
-        # 🔒 加锁保护：防止并发访问导致的数据竞争
+        # 加锁保护：防止并发访问导致的数据竞争
         async with self._lock:
             # 优先从本地缓存获取
             if device_id in self.devices:
@@ -213,7 +212,7 @@ class DevicePool:
                     status=DeviceStatus.ONLINE if device_data.get("status") == "online" else DeviceStatus.OFFLINE
                 )
                 
-                # 🔒 加锁保护：缓存更新
+                # 加锁保护：缓存更新
                 async with self._lock:
                     self.devices[device_id] = device
                 
@@ -472,7 +471,7 @@ class DevicePool:
             except asyncio.CancelledError:
                 pass
             self._health_check_task = None
-            logger.info("Health check stopped")
+        logger.info("Health check stopped")
     
     def get_stats(self) -> dict:
         """
@@ -565,7 +564,7 @@ if __name__ == "__main__":
         
         # 获取统计信息
         stats = pool.get_stats()
-        print(f"Stats: {stats}")
+    print(f"Stats: {stats}")
     
     asyncio.run(test())
 

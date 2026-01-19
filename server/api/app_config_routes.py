@@ -47,7 +47,7 @@ class SyncRequest(BaseModel):
     merge_mode: str = Field("add_new", description="合并模式: add_new | update_all | replace")
 
 
-@router.get("/apps", tags=["📱 应用管理"], response_model=dict)
+@router.get("/apps", tags=["应用管理"], response_model=dict)
 async def list_apps(
     enabled_only: bool = False,
     category: Optional[str] = None
@@ -92,7 +92,7 @@ async def list_apps(
     }
 
 
-@router.get("/apps/{package_name}", tags=["📱 应用管理"])
+@router.get("/apps/{package_name}", tags=["应用管理"])
 async def get_app(package_name: str):
     """获取应用详情"""
     manager = get_app_manager()
@@ -115,7 +115,7 @@ async def get_app(package_name: str):
     }
 
 
-@router.post("/apps", tags=["📱 应用管理"])
+@router.post("/apps", tags=["应用管理"])
 async def create_or_update_app(app_data: AppConfigRequest):
     """
     创建或更新应用配置
@@ -165,7 +165,7 @@ async def create_or_update_app(app_data: AppConfigRequest):
     }
 
 
-@router.patch("/apps/{package_name}/toggle", tags=["📱 应用管理"])
+@router.patch("/apps/{package_name}/toggle", tags=["应用管理"])
 async def toggle_app(
     package_name: str,
     enabled: bool = Body(..., embed=True)
@@ -190,7 +190,7 @@ async def toggle_app(
     }
 
 
-@router.delete("/apps/{package_name}", tags=["📱 应用管理"])
+@router.delete("/apps/{package_name}", tags=["应用管理"])
 async def delete_app(package_name: str):
     """删除应用配置"""
     manager = get_app_manager()
@@ -204,37 +204,36 @@ async def delete_app(package_name: str):
 
 
 # ========================================
-# ⚠️ 已弃用的扫描功能（保留API以保持向后兼容）
+# 已弃用的扫描功能（保留API以保持向后兼容）
 # ========================================
 # 原因：扫描出的包名为英文，用户体验差
 # 替代方案：使用200+预置应用 + 手动添加
 # ========================================
 
-# ✅ 应用扫描缓存（设备ID -> (应用列表, 过期时间)）
-_app_scan_cache = {}
+# 应用扫描缓存（设备ID -> (应用列表, 过期时间)） _app_scan_cache = {}
 _cache_ttl_seconds = 300  # 5分钟缓存
 
-@router.post("/apps/scan", tags=["📱 应用管理"], deprecated=True)
+@router.post("/apps/scan", tags=["应用管理"], deprecated=True)
 async def scan_device_apps(device_id: Optional[str] = None):
     """
-    ⚠️ 已弃用：扫描设备上的应用（优化版 - 添加缓存）
+    已弃用：扫描设备上的应用（优化版 - 添加缓存）
     
     不建议使用原因：
-      - 扫描出的包名为英文，用户体验差
-      - 建议使用200+预置应用 + 手动添加
+    - 扫描出的包名为英文，用户体验差
+    - 建议使用200+预置应用 + 手动添加
     
     仅扫描，不保存到配置
     """
     import time
     
-    # ✅ 检查缓存
+    # 检查缓存
     cache_key = device_id or "default"
     now = time.time()
     
     if cache_key in _app_scan_cache:
         cached_apps, expire_time = _app_scan_cache[cache_key]
         if now < expire_time:
-            logger.info(f"📦 Using cached app list for {cache_key}")
+            logger.info(f"Using cached app list for {cache_key}")
             return {
                 "apps": cached_apps,
                 "total": len(cached_apps),
@@ -249,7 +248,7 @@ async def scan_device_apps(device_id: Optional[str] = None):
     if not apps:
         raise HTTPException(500, "扫描失败或设备无应用")
     
-    # ✅ 更新缓存
+    # 更新缓存
     _app_scan_cache[cache_key] = (apps, now + _cache_ttl_seconds)
     
     return {
@@ -260,15 +259,15 @@ async def scan_device_apps(device_id: Optional[str] = None):
     }
 
 
-@router.post("/apps/sync", tags=["📱 应用管理"], deprecated=True)
+@router.post("/apps/sync", tags=["应用管理"], deprecated=True)
 async def sync_device_apps(request: SyncRequest):
     """
-    ⚠️ 已弃用：从设备同步应用到配置文件（异步优化版本）
+    已弃用：从设备同步应用到配置文件（异步优化版本）
     
     不建议使用原因：
-      - 扫描出的包名为英文，用户体验差
-      - 建议使用200+预置应用 + 手动添加
-      - 前端"扫描设备应用"按钮已移除
+    - 扫描出的包名为英文，用户体验差
+    - 建议使用200+预置应用 + 手动添加
+    - 前端"扫描设备应用"按钮已移除
     
     建议在设备连接后调用，自动扫描并更新应用列表
     
@@ -283,7 +282,7 @@ async def sync_device_apps(request: SyncRequest):
     import asyncio
     manager = get_app_manager()
     
-    # ✅ 异步执行同步操作，避免阻塞事件循环
+    # 异步执行同步操作，避免阻塞事件循环
     sync_result = await asyncio.to_thread(
         manager.sync_from_device,
         device_id=request.device_id,
@@ -308,8 +307,7 @@ async def sync_device_apps(request: SyncRequest):
     
     tip = None
     if not request.auto_enable and new_apps > 0:
-        tip = f"💡 新增了 {new_apps} 个应用（默认禁用），请到应用管理页面启用需要的应用"
-    
+        tip = f"新增了 {new_apps} 个应用（默认禁用），请到应用管理页面启用需要的应用"
     return {
         "message": f"同步成功，新增 {new_apps} 个，删除 {removed_apps} 个，保留 {kept_apps} 个",
         "new_apps": new_apps,
@@ -320,7 +318,7 @@ async def sync_device_apps(request: SyncRequest):
     }
 
 
-@router.get("/apps/categories", tags=["📱 应用管理"])
+@router.get("/apps/categories", tags=["应用管理"])
 async def get_categories():
     """获取所有分类"""
     manager = get_app_manager()
@@ -342,7 +340,7 @@ async def get_categories():
     return {"categories": categories}
 
 
-@router.get("/apps/stats", tags=["📱 应用管理"])
+@router.get("/apps/stats", tags=["应用管理"])
 async def get_stats():
     """获取应用统计信息"""
     manager = get_app_manager()
@@ -351,7 +349,7 @@ async def get_stats():
     return stats
 
 
-@router.post("/apps/search", tags=["📱 应用管理"])
+@router.post("/apps/search", tags=["应用管理"])
 async def search_app(name: str = Body(..., embed=True)):
     """
     搜索应用
@@ -377,7 +375,7 @@ async def search_app(name: str = Body(..., embed=True)):
     }
 
 
-@router.post("/apps/batch-toggle", tags=["📱 应用管理"])
+@router.post("/apps/batch-toggle", tags=["应用管理"])
 async def batch_toggle_apps(
     package_names: List[str] = Body(..., embed=True),
     enabled: bool = Body(..., embed=True)

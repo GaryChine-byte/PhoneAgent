@@ -3,12 +3,12 @@
 # Modified: Copyright (C) 2025 PhoneAgent Contributors (AGPL-3.0)
 # Based on: https://github.com/zai-org/Open-AutoGLM
 
-"""Device control utilities for Android automation."""
+"""Android自动化设备控制工具"""
 
 import os
 import subprocess
 import time
-import shlex  # 🔒 用于安全转义命令参数
+import shlex  # [SECURITY] 用于安全转义命令参数
 from typing import List, Optional, Tuple
 
 from phone_agent.config.apps import APP_PACKAGES
@@ -17,13 +17,13 @@ from phone_agent.adb.anti_detection import get_anti_detection
 
 def get_current_app(device_id: str | None = None) -> str:
     """
-    Get the currently focused app name.
+    获取当前焦点应用名称
 
     Args:
-        device_id: Optional ADB device ID for multi-device setups.
+        device_id: ADB设备ID(可选),用于多设备场景
 
     Returns:
-        The app name if recognized, otherwise "System Home".
+        识别的应用名称,否则返回"系统桌面"
     """
     adb_prefix = _get_adb_prefix(device_id)
 
@@ -35,27 +35,44 @@ def get_current_app(device_id: str | None = None) -> str:
     )
     output = result.stdout
 
-    # Parse window focus info
+    # 解析窗口焦点信息
     for line in output.split("\n"):
         if "mCurrentFocus" in line or "mFocusedApp" in line:
             for app_name, package in APP_PACKAGES.items():
                 if package in line:
                     return app_name
 
-    return "System Home"
+    return "系统桌面"
 
 
 def tap(x: int, y: int, device_id: str | None = None, delay: float = 1.0, use_anti_detection: bool = True) -> None:
     """
-    Tap at the specified coordinates.
+    在指定坐标点击
 
     Args:
-        x: X coordinate.
-        y: Y coordinate.
-        device_id: Optional ADB device ID.
-        delay: Delay in seconds after tap (仅use_anti_detection=False时生效).
-        use_anti_detection: 是否使用防风控（随机化坐标和延迟）
+        x: X坐标
+        y: Y坐标
+        device_id: ADB设备ID(可选)
+        delay: 点击后延迟秒数(仅use_anti_detection=False时生效)
+        use_anti_detection: 是否使用防风控(随机化坐标和延迟)
+    
+    Raises:
+        RuntimeError: 当点击命令失败或设备不可用时
     """
+    # [NEW] 自动检查并重连（针对网络ADB）
+    from phone_agent.adb.auto_reconnect import ensure_device_connected
+    ensure_device_connected(device_id)
+    
+    # [OK] 设备健康检查（默认禁用，避免频繁检查导致连接不稳定）
+    # 如需启用：export PHONEAGENT_ENABLE_DEVICE_HEALTH_CHECK=true
+    from phone_agent.adb.device_health import validate_device_before_command, ENABLE_DEVICE_HEALTH_CHECK
+    if ENABLE_DEVICE_HEALTH_CHECK and device_id:
+        try:
+            validate_device_before_command(device_id)
+        except RuntimeError as e:
+            # 设备检查失败，但不影响命令执行（让后续的错误检查处理）
+            logger.warning(f"Device health check failed: {e}")
+    
     adb_prefix = _get_adb_prefix(device_id)
     
     # 防风控：随机化点击位置
@@ -63,11 +80,23 @@ def tap(x: int, y: int, device_id: str | None = None, delay: float = 1.0, use_an
         ad = get_anti_detection()
         x, y = ad.randomize_point(x, y)
 
-    subprocess.run(
+    result = subprocess.run(
         adb_prefix + ["shell", "input", "tap", str(x), str(y)], 
         capture_output=True,
         timeout=10
     )
+    
+    # [OK] 检查命令执行结果
+    if result.returncode != 0:
+        error_msg = result.stderr.decode('utf-8', errors='ignore') if result.stderr else "Unknown error"
+        
+        # 特殊错误处理
+        if "device" in error_msg.lower() and "not found" in error_msg.lower():
+            raise RuntimeError(f"Device '{device_id}' not found. Please check device connection.")
+        elif "offline" in error_msg.lower():
+            raise RuntimeError(f"Device '{device_id}' is offline. Please reconnect the device.")
+        else:
+            raise RuntimeError(f"Tap command failed at ({x}, {y}): {error_msg}")
     
     # 防风控：人性化延迟
     if use_anti_detection:
@@ -87,20 +116,36 @@ def double_tap(
         y: Y coordinate.
         device_id: Optional ADB device ID.
         delay: Delay in seconds after double tap.
+    
+    Raises:
+        RuntimeError: If tap command fails
     """
+    # [NEW] 自动检查并重连
+    from phone_agent.adb.auto_reconnect import ensure_device_connected
+    ensure_device_connected(device_id)
+    
     adb_prefix = _get_adb_prefix(device_id)
 
-    subprocess.run(
+    result1 = subprocess.run(
         adb_prefix + ["shell", "input", "tap", str(x), str(y)], 
         capture_output=True,
         timeout=10
     )
+    if result1.returncode != 0:
+        error_msg = result1.stderr.decode('utf-8', errors='ignore') if result1.stderr else "Unknown error"
+        raise RuntimeError(f"First tap failed at ({x}, {y}): {error_msg}")
+    
     time.sleep(0.1)
-    subprocess.run(
+    
+    result2 = subprocess.run(
         adb_prefix + ["shell", "input", "tap", str(x), str(y)], 
         capture_output=True,
         timeout=10
     )
+    if result2.returncode != 0:
+        error_msg = result2.stderr.decode('utf-8', errors='ignore') if result2.stderr else "Unknown error"
+        raise RuntimeError(f"Second tap failed at ({x}, {y}): {error_msg}")
+    
     time.sleep(delay)
 
 
@@ -120,15 +165,27 @@ def long_press(
         duration_ms: Duration of press in milliseconds.
         device_id: Optional ADB device ID.
         delay: Delay in seconds after long press.
+    
+    Raises:
+        RuntimeError: If long press command fails
     """
+    # [NEW] 自动检查并重连
+    from phone_agent.adb.auto_reconnect import ensure_device_connected
+    ensure_device_connected(device_id)
+    
     adb_prefix = _get_adb_prefix(device_id)
 
-    subprocess.run(
+    result = subprocess.run(
         adb_prefix
         + ["shell", "input", "swipe", str(x), str(y), str(x), str(y), str(duration_ms)],
         capture_output=True,
         timeout=15
     )
+    
+    if result.returncode != 0:
+        error_msg = result.stderr.decode('utf-8', errors='ignore') if result.stderr else "Unknown error"
+        raise RuntimeError(f"Long press failed at ({x}, {y}): {error_msg}")
+    
     time.sleep(delay)
 
 
@@ -155,6 +212,10 @@ def swipe(
         delay: Delay in seconds after swipe (仅use_anti_detection=False时生效).
         use_anti_detection: 是否使用防风控（贝塞尔曲线滑动）
     """
+    # [NEW] 自动检查并重连
+    from phone_agent.adb.auto_reconnect import ensure_device_connected
+    ensure_device_connected(device_id)
+    
     adb_prefix = _get_adb_prefix(device_id)
     ad = get_anti_detection()
 
@@ -178,7 +239,7 @@ def swipe(
             x2, y2 = path[i + 1]
             seg_duration = duration_ms // len(path)
             
-            subprocess.run(
+            result = subprocess.run(
                 adb_prefix + [
                     "shell", "input", "swipe",
                     str(x1), str(y1), str(x2), str(y2), str(seg_duration)
@@ -186,9 +247,12 @@ def swipe(
                 capture_output=True,
                 timeout=15
             )
+            if result.returncode != 0:
+                error_msg = result.stderr.decode('utf-8', errors='ignore') if result.stderr else "Unknown error"
+                raise RuntimeError(f"Swipe segment {i} failed: {error_msg}")
     else:
         # 普通直线滑动
-        subprocess.run(
+        result = subprocess.run(
             adb_prefix
             + [
                 "shell",
@@ -203,6 +267,9 @@ def swipe(
             capture_output=True,
             timeout=15
         )
+        if result.returncode != 0:
+            error_msg = result.stderr.decode('utf-8', errors='ignore') if result.stderr else "Unknown error"
+            raise RuntimeError(f"Swipe failed from ({start_x}, {start_y}) to ({end_x}, {end_y}): {error_msg}")
 
     # 防风控：人性化延迟
     if use_anti_detection:
@@ -276,6 +343,10 @@ def launch_app(app_name: str, device_id: str | None = None, delay: float = 1.0) 
     import logging
     logger = logging.getLogger(__name__)
     
+    # [NEW] 自动检查并重连
+    from phone_agent.adb.auto_reconnect import ensure_device_connected
+    ensure_device_connected(device_id)
+    
     package = None
     source = None
     
@@ -317,14 +388,14 @@ def launch_app(app_name: str, device_id: str | None = None, delay: float = 1.0) 
     
     # 如果仍然找不到包名，返回详细错误
     if not package:
-        logger.error(f"❌ 未找到应用 '{app_name}' 的包名")
-        logger.info(f"💡 提示: 请在 data/app_config.json 中添加应用配置:")
+        logger.error(f"[X] 未找到应用 '{app_name}' 的包名")
+        logger.info(f"[NOTE] 提示: 请在 data/app_config.json 中添加应用配置:")
         logger.info(f'   {{"display_name": "{app_name}", "package_name": "com.example.app"}}')
         logger.info(f"   或在 phone_agent/config/apps.py 的 APP_PACKAGES 中添加")
         return False
 
     adb_prefix = _get_adb_prefix(device_id)
-    logger.info(f"🚀 正在启动应用: {app_name} ({package}) [来源: {source}]")
+    logger.info(f" 正在启动应用: {app_name} ({package}) [来源: {source}]")
 
     # Method 1: Use Activity Manager (AM) - Most reliable and fast
     try:
@@ -346,19 +417,19 @@ def launch_app(app_name: str, device_id: str | None = None, delay: float = 1.0) 
         
         # Check if launch was successful
         if result.returncode == 0 and "Error" not in result.stderr:
-            logger.info(f"✅ 应用启动成功 (AM): {app_name}")
+            logger.info(f"[OK] 应用启动成功 (AM): {app_name}")
             time.sleep(delay)
             return True
         
-        logger.warning(f"⚠️ AM启动失败: {result.stderr.strip()}")
+        logger.warning(f"[WARN] AM启动失败: {result.stderr.strip()}")
         
     except subprocess.TimeoutExpired:
-        logger.warning(f"⚠️ AM启动超时")
+        logger.warning(f"[WARN] AM启动超时")
     except Exception as e:
-        logger.warning(f"⚠️ AM启动异常: {e}")
+        logger.warning(f"[WARN] AM启动异常: {e}")
     
     # Method 2: Fallback to monkey command
-    logger.info(f"🔄 尝试 monkey 命令启动...")
+    logger.info(f"[UPDATE] 尝试 monkey 命令启动...")
     try:
         result = subprocess.run(
             adb_prefix + [
@@ -376,20 +447,30 @@ def launch_app(app_name: str, device_id: str | None = None, delay: float = 1.0) 
         )
         
         if result.returncode == 0:
-            logger.info(f"✅ 应用启动成功 (monkey): {app_name}")
+            logger.info(f"[OK] 应用启动成功 (monkey): {app_name}")
             time.sleep(delay)
             return True
         
-        logger.error(f"❌ monkey启动失败: {result.stderr.strip()}")
+        stderr = result.stderr.strip()
+        
+        # 特殊错误处理
+        if "device" in stderr.lower() and "not found" in stderr.lower():
+            logger.error(f"[X] 设备未连接: {stderr}")
+            logger.error(f"[NOTE] 请检查设备连接状态: adb devices")
+        elif "offline" in stderr.lower():
+            logger.error(f"[X] 设备离线: {stderr}")
+            logger.error(f"[NOTE] 请重新连接设备或重启ADB")
+        else:
+            logger.error(f"[X] monkey启动失败: {stderr}")
         
     except subprocess.TimeoutExpired:
-        logger.error(f"❌ monkey启动超时")
+        logger.error(f"[X] monkey启动超时")
     except Exception as e:
-        logger.error(f"❌ monkey启动异常: {e}")
+        logger.error(f"[X] monkey启动异常: {e}")
     
     # Method 3: All methods failed
-    logger.error(f"❌ 应用启动失败: {app_name}")
-    logger.info(f"💡 调试建议:")
+    logger.error(f"[X] 应用启动失败: {app_name}")
+    logger.info(f"[NOTE] 调试建议:")
     logger.info(f"   1. 检查包名是否正确: {package}")
     logger.info(f"   2. 手动测试: adb shell am start -n {package}/.MainActivity")
     logger.info(f"   3. 检查应用是否已安装: adb shell pm list packages | grep {package}")
@@ -400,10 +481,10 @@ def _get_adb_prefix(device_id: str | None) -> list:
     """
     Get ADB command prefix with optional device specifier.
     
-    🔒 安全性：device_id 会被验证，防止命令注入
+    [SECURITY] 安全性：device_id 会被验证，防止命令注入
     """
     if device_id:
-        # 🔒 验证 device_id 格式，防止命令注入
+        # [SECURITY] 验证 device_id 格式，防止命令注入
         # 合法格式：localhost:6100, 192.168.1.100:5555, emulator-5554, ABCD1234
         if not _is_valid_device_id(device_id):
             raise ValueError(f"Invalid device_id format: {device_id}")

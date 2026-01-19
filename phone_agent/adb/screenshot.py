@@ -1,4 +1,8 @@
-"""Screenshot utilities for capturing Android device screen."""
+#!/usr/bin/env python3
+# Copyright (C) 2025 PhoneAgent Contributors
+# Licensed under AGPL-3.0
+
+"""Android设备屏幕截图工具"""
 
 import base64
 import os
@@ -27,13 +31,13 @@ USE_YADB_FORCE_SCREENSHOT = True
 
 @dataclass
 class Screenshot:
-    """Represents a captured screenshot."""
+    """捕获的截图数据"""
 
     base64_data: str
     width: int
     height: int
     is_sensitive: bool = False
-    forced: bool = False  # 新增：是否使用强制截图
+    forced: bool = False  # 新增: 是否使用强制截图
 
 
 def get_screenshot(
@@ -41,44 +45,67 @@ def get_screenshot(
     timeout: int = 30,
     adb_host: str | None = None,
     adb_port: int | None = None,
-    force_yadb: bool = False
+    force_yadb: bool = False,
+    prefer_yadb: bool = True  # 新增: 优先使用 yadb
 ) -> Screenshot:
     """
-    Capture a screenshot from the connected Android device.
+    从连接的Android设备捕获截图
 
     Args:
-        device_id: Optional ADB device ID for multi-device setups.
-        timeout: Timeout in seconds for screenshot operations.
-        adb_host: ADB server host (for FRP tunneling)
-        adb_port: ADB server port (for FRP tunneling)
-        force_yadb: Force use yadb even if standard method succeeds
+        device_id: ADB设备ID(可选),用于多设备场景
+        timeout: 截图操作超时秒数
+        adb_host: ADB服务器主机(用于FRP隧道)
+        adb_port: ADB服务器端口(用于FRP隧道)
+        force_yadb: 强制只使用yadb(不回退)
+        prefer_yadb: 优先使用yadb但失败时回退到标准方式(默认: True)
 
     Returns:
-        Screenshot object containing base64 data and dimensions.
+        包含base64数据和尺寸的Screenshot对象
 
     Note:
-        Tries standard screencap first. If it fails (e.g., on sensitive screens 
-        like payment apps with FLAG_SECURE), automatically falls back to yadb 
-        force screenshot which bypasses these restrictions.
+        **优先级策略 (prefer_yadb=True, 默认):**
+        1. 优先尝试 yadb 强制截图(可绕过 FLAG_SECURE)
+        2. 如果 yadb 失败,回退到标准截图
+        
+        **强制模式 (force_yadb=True):**
+        - 只使用 yadb,不回退
+        
+        **标准模式 (prefer_yadb=False):**
+        - 先用标准截图,失败时才用 yadb
     """
-    # 如果强制使用 yadb
+    # 模式 1: 强制只使用 yadb (不回退)
     if force_yadb and YADB_AVAILABLE and USE_YADB_FORCE_SCREENSHOT:
-        logger.info("Using yadb force screenshot (forced mode)")
+        logger.info("[SECURITY] Using yadb force screenshot (forced mode, no fallback)")
         return _get_screenshot_yadb(device_id, adb_host, adb_port)
     
-    # 尝试标准截图
+    # 模式 2: 优先使用 yadb (推荐，默认)
+    if prefer_yadb and YADB_AVAILABLE and USE_YADB_FORCE_SCREENSHOT:
+        logger.info("[TARGET] Trying yadb force screenshot first (preferred mode)...")
+        yadb_screenshot = _get_screenshot_yadb(device_id, adb_host, adb_port)
+        
+        # yadb 成功，直接返回
+        if yadb_screenshot and not yadb_screenshot.is_sensitive:
+            logger.info("[OK] yadb force screenshot succeeded!")
+            return yadb_screenshot
+        
+        # yadb 失败，回退到标准截图
+        logger.warning("[WARN] yadb failed, falling back to standard screenshot...")
+        return _get_screenshot_standard(device_id, timeout, adb_host, adb_port)
+    
+    # 模式 3: 标准模式 (先标准，失败时用 yadb)
+    logger.info("📸 Using standard screenshot...")
     screenshot = _get_screenshot_standard(device_id, timeout, adb_host, adb_port)
     
-    # 如果标准截图失败，尝试 yadb 强制截图
+    # 如果标准截图失败（敏感屏幕），尝试 yadb 强制截图
     if screenshot.is_sensitive and YADB_AVAILABLE and USE_YADB_FORCE_SCREENSHOT:
-        logger.info("Standard screenshot failed, trying yadb force screenshot...")
+        logger.info("🔓 Standard screenshot blocked, trying yadb force screenshot...")
         yadb_screenshot = _get_screenshot_yadb(device_id, adb_host, adb_port)
         
         if yadb_screenshot and not yadb_screenshot.is_sensitive:
-            logger.info("✅ yadb force screenshot succeeded!")
+            logger.info("[OK] yadb force screenshot succeeded!")
             return yadb_screenshot
         else:
-            logger.warning("yadb force screenshot also failed, returning fallback")
+            logger.warning("[X] yadb force screenshot also failed, returning fallback")
     
     return screenshot
 
@@ -119,14 +146,14 @@ def _get_screenshot_standard(
         
         if not image_data or len(image_data) < 100:
             logger.warning(f"Screenshot data too small: {len(image_data)} bytes")
-            # ✅ 修复：数据过小也可能是敏感屏幕
+            # [OK] 修复：数据过小也可能是敏感屏幕
             return _create_fallback_screenshot(is_sensitive=True)
 
         # 使用 BytesIO 从内存中加载图片
         img = Image.open(BytesIO(image_data))
         width, height = img.size
 
-        # ✅ 新增：检测是否是全黑或几乎全黑的图片（可能是敏感屏幕）
+        # [OK] 新增：检测是否是全黑或几乎全黑的图片（可能是敏感屏幕）
         # 计算平均亮度
         grayscale = img.convert('L')  # 转为灰度
         pixels = list(grayscale.getdata())
@@ -150,10 +177,10 @@ def _get_screenshot_standard(
 
     except subprocess.TimeoutExpired:
         logger.error(f"Screenshot timeout after {timeout}s")
-        return _create_fallback_screenshot(is_sensitive=True)  # ✅ 超时也标记为敏感
+        return _create_fallback_screenshot(is_sensitive=True)  # [OK] 超时也标记为敏感
     except Exception as e:
         logger.error(f"Screenshot error: {e}", exc_info=True)
-        return _create_fallback_screenshot(is_sensitive=True)  # ✅ 异常也标记为敏感
+        return _create_fallback_screenshot(is_sensitive=True)  # [OK] 异常也标记为敏感
 
 
 def _get_screenshot_yadb(
@@ -168,11 +195,13 @@ def _get_screenshot_yadb(
     and payment apps that normally block screenshots.
     """
     try:
+        # 使用重试机制（最多3次）
         result = yadb.force_screenshot_base64(
             device_id=device_id,
             adb_host=adb_host,
             adb_port=adb_port,
-            include_dimensions=True
+            include_dimensions=True,
+            max_retries=3  # 新增：最多重试3次
         )
         
         if result and isinstance(result, dict):
@@ -193,15 +222,31 @@ def _get_screenshot_yadb(
 
 
 def _get_adb_prefix(device_id: str | None, adb_host: str | None = None, adb_port: int | None = None) -> list:
-    """Get ADB command prefix with optional device specifier."""
+    """
+    Get ADB command prefix with optional device specifier.
+    
+    Args:
+        device_id: Device serial number (can be IP:PORT for network ADB)
+        adb_host: ADB server host (deprecated, use device_id with IP:PORT instead)
+        adb_port: ADB server port (deprecated, use device_id with IP:PORT instead)
+    
+    Returns:
+        ADB command prefix list
+    
+    Note:
+        For FRP tunneling, use device_id="localhost:6104" instead of adb_host/adb_port.
+        The -H and -P flags are for ADB server, not for device connection.
+    """
     cmd = ["adb"]
     
-    # FRP 隧道模式（优先）
-    if adb_host and adb_port:
-        cmd.extend(["-H", adb_host, "-P", str(adb_port)])
-    # 直接连接模式
-    elif device_id:
+    # 优先使用 device_id
+    if device_id:
         cmd.extend(["-s", device_id])
+    # 兼容旧参数：将 adb_host:adb_port 转换为 device_id
+    elif adb_host and adb_port:
+        device_address = f"{adb_host}:{adb_port}"
+        cmd.extend(["-s", device_address])
+        logger.debug(f"Converting adb_host/adb_port to device_id: {device_address}")
     
     return cmd
 

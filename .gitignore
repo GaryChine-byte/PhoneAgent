@@ -48,6 +48,7 @@ autoglm_venv/
 *.swo
 *~
 .DS_Store
+.cursor
 
 # ============================================
 # Environment Variables
@@ -125,6 +126,17 @@ data/*
 AIKit_AEE_Android_IVW_*/
 android-action-kernel-main/
 gelab-zero-main/
+windows_ivw_*/
+
+# ============================================
+# Third-party Reference Projects (参考项目源码 - 不开源)
+# ============================================
+Open-AutoGLM-main/
+MobileAgent-main/
+MAI-UI-main/
+android-use-main/
+ten-framework-main/
+termux-app-master/
 
 # ============================================
 # Commercial Content (商业版内容)
@@ -187,14 +199,40 @@ frp_*/
 frpc
 frps
 *.ini
-!frps.ini.example
+!server/frps.ini.example
 
 # ============================================
 # Android (暂不开源)
 # ============================================
 android-app/
+android-remote-control/
 *.apk
 *.aab
+
+# ============================================
+# Deprecated Client (废弃的 Termux 部署方案)
+# ============================================
+client/
+
+# ============================================
+# PC Agent Unfinished Features (未实现的功能)
+# ============================================
+pc_agent/voice/
+pc_agent/*.log
+pc_agent/*.ini
+pc_agent/config.yaml
+pc_agent/frpc
+pc_agent/frpc.exe
+
+# ============================================
+# Tests (测试文件 - 不提交)
+# ============================================
+tests/
+
+# ============================================
+# Temporary Folders
+# ============================================
+temp/
 
 # ============================================
 # Git Credentials
@@ -206,3 +244,6 @@ android-app/
 # ============================================
 # .github/ 文件夹保留，但忽略某些临时文件
 .github/**/*.log
+
+# Cursor IDE
+.cursor/

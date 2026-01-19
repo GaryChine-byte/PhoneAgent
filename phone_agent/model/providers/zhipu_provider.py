@@ -1,6 +1,10 @@
+#!/usr/bin/env python3
+# Copyright (C) 2025 PhoneAgent Contributors
+# Licensed under AGPL-3.0
+
 """
-Zhipu AI VLM Provider
-Supports: GLM-4V, GLM-4V-Flash, GLM-4.1V-Thinking-Flash
+智谱AI视觉语言模型Provider
+支持: GLM-4V, GLM-4V-Flash, GLM-4.1V-Thinking-Flash
 """
 
 import re
@@ -12,7 +16,7 @@ from phone_agent.model.providers.base import BaseVLMProvider, VLMResponse
 
 
 class ZhipuAIProvider(BaseVLMProvider):
-    """Provider for Zhipu AI (智谱AI) models"""
+    """智谱AI模型Provider"""
     
     DEFAULT_BASE_URL = "https://open.bigmodel.cn/api/paas/v4"
     
@@ -38,9 +42,9 @@ class ZhipuAIProvider(BaseVLMProvider):
         temperature: float = 0.7,
         **kwargs: Any
     ) -> VLMResponse:
-        """Generate response using Zhipu AI API"""
+        """使用智谱AI API生成响应"""
         
-        # Prepare request parameters
+        # 准备请求参数
         request_params = {
             "model": self.model_name,
             "messages": messages,
@@ -48,24 +52,24 @@ class ZhipuAIProvider(BaseVLMProvider):
             "temperature": temperature,
         }
         
-        # Add extra parameters (filter out None and 0.0 values)
+        # 添加额外参数(过滤None和0.0值)
         for key, value in self.extra_params.items():
             if value is not None and value != 0.0:
                 request_params[key] = value
         
-        # Override with kwargs
+        # 用kwargs覆盖参数
         request_params.update(kwargs)
         
-        # Call API
+        # 调用API
         response = self.client.chat.completions.create(**request_params)
         
-        # Extract content
+        # 提取内容
         raw_output = response.choices[0].message.content or ""
         
-        # Parse thinking and action
+        # 解析思考和动作
         thinking, action = self.parse_response(raw_output)
         
-        # Prepare usage info
+        # 准备使用信息
         usage = None
         if response.usage:
             usage = {
@@ -84,15 +88,16 @@ class ZhipuAIProvider(BaseVLMProvider):
     
     def parse_response(self, raw_output: str) -> tuple[str, str]:
         """
-        Parse Zhipu AI model response.
-        Supports multiple output formats specific to GLM models:
+        解析智谱AI模型响应
+        
+        支持GLM模型特有的多种输出格式:
         - AutoGLM: <think>...</think><answer>...</answer>
         - JSON: {"think": "...", "action": "..."}
-        - Thinking mode: {think>...}</think><|begin_of_box|>...<|end_of_box|>
-        - Multi-line: {think}...{action}do(...)
+        - Thinking模式: {think>...}</think><|begin_of_box|>...<|end_of_box|>
+        - 多行: {think}...{action}do(...)
         """
         
-        # Format 1: AutoGLM standard format
+        # 格式1: AutoGLM标准格式
         if "<answer>" in raw_output:
             parts = raw_output.split("<answer>", 1)
             thinking = parts[0].replace("<think>", "").replace("</think>", "").strip()

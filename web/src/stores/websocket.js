@@ -41,7 +41,7 @@ export const useWebSocketStore = defineStore('websocket', () => {
       ws.value = new WebSocket(wsUrl)
       
       ws.value.onopen = () => {
-        console.log('✅ WebSocket connected')
+        console.log('WebSocket connected')
         connected.value = true
         reconnectAttempts.value = 0
         reconnectDelay.value = 1000
@@ -63,8 +63,7 @@ export const useWebSocketStore = defineStore('websocket', () => {
       }
       
       ws.value.onerror = (error) => {
-        console.error('❌ WebSocket error:', error)
-      }
+ console.error(' WebSocket error:', error)       }
       
       ws.value.onclose = () => {
         console.log('🔌 WebSocket disconnected')
@@ -74,8 +73,7 @@ export const useWebSocketStore = defineStore('websocket', () => {
         // 尝试重连
         if (reconnectAttempts.value < maxReconnectAttempts) {
           reconnectAttempts.value++
-          console.log(`🔄 Reconnecting in ${reconnectDelay.value}ms (attempt ${reconnectAttempts.value}/${maxReconnectAttempts})`)
-          
+ console.log(` Reconnecting in ${reconnectDelay.value}ms (attempt ${reconnectAttempts.value}/${maxReconnectAttempts})`)           
           setTimeout(() => {
             connect()
           }, reconnectDelay.value)
@@ -83,8 +81,7 @@ export const useWebSocketStore = defineStore('websocket', () => {
           // 指数退避
           reconnectDelay.value = Math.min(reconnectDelay.value * 2, 30000)
         } else {
-          console.error('❌ Max reconnect attempts reached')
-        }
+ console.error(' Max reconnect attempts reached')         }
       }
     } catch (e) {
       console.error('Failed to create WebSocket:', e)
@@ -135,23 +132,29 @@ export const useWebSocketStore = defineStore('websocket', () => {
         
       case 'task_step_update':
         // 任务步骤更新（实时推送）
-        console.log('✅ [WebSocket] Task step update received:', data.data)
+        console.log('[WebSocket] Task step update received:', data.data)
         // 触发自定义事件，让其他组件监听
         window.dispatchEvent(new CustomEvent('task-step-update', { detail: data.data }))
-        console.log('✅ [WebSocket] Custom event dispatched: task-step-update')
+        console.log('[WebSocket] Custom event dispatched: task-step-update')
         break
         
       case 'task_status_change':
         // 任务状态变化事件（新增）
-        console.log('✅ [WebSocket] Task status change received:', data.data)
+        console.log('[WebSocket] Task status change received:', data.data)
         window.dispatchEvent(new CustomEvent('task-status-change', { detail: data.data }))
-        console.log('✅ [WebSocket] Custom event dispatched: task-status-change')
+        console.log('[WebSocket] Custom event dispatched: task-status-change')
         break
         
       case 'task_cancelled':
         // 任务取消事件
         console.log('Task cancelled:', data.data)
         window.dispatchEvent(new CustomEvent('task-cancelled', { detail: data.data }))
+        break
+        
+      case 'human_intervention_needed':
+        // 人机协同：需要人工干预
+        console.log('[WebSocket] Human intervention needed:', data.data)
+        window.dispatchEvent(new CustomEvent('human-intervention-needed', { detail: data.data }))
         break
         
       default:

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (C) 2025 PhoneAgent Contributors
+# Licensed under AGPL-3.0
+
 """
 防风控配置API
 提供防风控配置的增删改查接口

@@ -458,3 +458,30 @@
   }
 }
 
+/* ============================================
+   下拉框专用样式
+   ============================================ */
+
+/* 首页设备选择下拉框 - 自动高度支持混合设备显示 */
+.home-device-select-dropdown {
+  max-height: 400px !important;
+  overflow-y: auto;
+}
+
+.home-device-select-dropdown .el-select-dropdown__list {
+  max-height: 380px !important;
+  padding: 4px 0;
+}
+
+.home-device-select-dropdown .el-select-dropdown__item {
+  height: auto;
+  min-height: 44px;
+  padding: 8px 12px;
+  line-height: 1.5;
+}
+
+.home-device-select-dropdown .el-select-dropdown__item:hover {
+  background-color: var(--el-fill-color-light);
+}
+
+/* 设备选项内部布局样式已在 Home.vue 中定义 */

@@ -1,3 +1,7 @@
+#!/usr/bin/env python3
+# Copyright (C) 2025 PhoneAgent Contributors
+# Licensed under AGPL-3.0
+
 """
 任务预处理器
 
@@ -50,15 +54,15 @@ class TaskPreprocessor:
     SYSTEM_PATTERNS = {
         "launch_app": [
             # 中文 - 宽松匹配：允许"打开XX，然后..."格式
-            (r"^(打开|启动)\s*(?P<app>[\w\u4e00-\u9fa5]+)\s*[，,]", 0.90),  # 🆕 带逗号的复合任务
+            (r"^(打开|启动)\s*(?P<app>[\w\u4e00-\u9fa5]+)\s*[，,]", 0.90),  # [NEW] 带逗号的复合任务
             (r"^(打开|启动)\s*(?P<app>[\w\u4e00-\u9fa5]+)(app|应用)?$", 0.95),  # 原有：纯启动
             (r"^(?P<app>[\w\u4e00-\u9fa5]+)\s*(app|应用)$", 0.90),
-            # 🆕 隐式启动：应用名在开头，后跟动作（如"小红书创作一篇图文笔记"）
+            # [NEW] 隐式启动：应用名在开头，后跟动作（如"小红书创作一篇图文笔记"）
             (r"^(?P<app>[\w\u4e00-\u9fa5]{2,6})(创作|发布|发送|搜索|查找|购买|下单|刷|看|浏览)", 0.85),
-            # 🆕 隐式启动：在XX做YY（如"在微信给张三发消息"）
+            # [NEW] 隐式启动：在XX做YY（如"在微信给张三发消息"）
             (r"^在\s*(?P<app>[\w\u4e00-\u9fa5]+)\s*(给|向|跟|和|找|搜|查)", 0.85),
             # 英文
-            (r"^(Open|Launch)\s+(?P<app>[\w\s]+?)\s*[，,]", 0.90, re.IGNORECASE),  # 🆕 复合任务
+            (r"^(Open|Launch)\s+(?P<app>[\w\s]+?)\s*[，,]", 0.90, re.IGNORECASE),  # [NEW] 复合任务
             (r"^(Open|Launch)\s+(?P<app>[\w\s]+?)(app)?$", 0.95, re.IGNORECASE),
         ],
         "go_home": [
@@ -118,7 +122,7 @@ class TaskPreprocessor:
                         match.groupdict()
                     )
                     
-                    # 🆕 检测复合任务
+                    # [NEW] 检测复合任务
                     # 1. 包含逗号/句号/且/并且等连接词
                     # 2. 隐式启动（应用名后跟动作，如"小红书创作..."、"在微信给..."）
                     is_compound = bool(re.search(r'[，,。；;]|且|并且|然后|接着', instruction))
@@ -128,7 +132,7 @@ class TaskPreprocessor:
                         direct_action["is_compound"] = True
                         task_type_desc = "隐式启动" if is_implicit_launch else "复合任务"
                         logger.info(
-                            f"📋 任务预处理: '{instruction}' → {action_type}(app={direct_action.get('app')}) + LLM后续 "
+                            f" 任务预处理: '{instruction}' → {action_type}(app={direct_action.get('app')}) + LLM后续 "
                             f"({task_type_desc}，置信度: {confidence:.2f})"
                         )
                         # 复合任务：先执行launch，再交给LLM
@@ -136,14 +140,14 @@ class TaskPreprocessor:
                             executor=ExecutorType.RULE_ENGINE,
                             task_type=TaskType.SYSTEM_COMMAND,
                             direct_action=direct_action,
-                            skip_llm=False,  # 🆕 不跳过LLM！
+                            skip_llm=False,  # [NEW] 不跳过LLM！
                             params={"instruction": instruction},
                             fallback=ExecutorType(current_kernel),
                             confidence=confidence
                         )
                     
                     logger.info(
-                        f"📋 任务预处理: '{instruction}' → {action_type} "
+                        f" 任务预处理: '{instruction}' → {action_type} "
                         f"(置信度: {confidence:.2f})"
                     )
                     
@@ -162,7 +166,7 @@ class TaskPreprocessor:
                     )
         
         # 2. 未匹配到系统指令，走正常流程
-        logger.debug(f"📋 任务预处理: '{instruction}' → 未识别为系统指令，走正常流程")
+        logger.debug(f" 任务预处理: '{instruction}' → 未识别为系统指令，走正常流程")
         
         return ExecutionPlan(
             executor=ExecutorType(current_kernel),
@@ -186,7 +190,7 @@ class TaskPreprocessor:
             return {
                 "type": "launch",
                 "app": app_name,
-                # 🆕 标记是否为复合任务（需要后续LLM处理）
+                # [NEW] 标记是否为复合任务（需要后续LLM处理）
                 "is_compound": False  # 由调用方设置
             }
         

@@ -1,3 +1,7 @@
+#!/usr/bin/env python3
+# Copyright (C) 2025 PhoneAgent Contributors
+# Licensed under AGPL-3.0
+
 """
 Task Logger - JSONL Format
 
@@ -95,6 +99,7 @@ class TaskLogger(BaseLogger):
         screenshot_path: str | None = None,
         performance: Dict[str, float] | None = None,
         tokens_used: Dict[str, int] | None = None,
+        success: bool = True,
     ) -> None:
         """
         Log a single step (appends to JSONL file).
@@ -113,6 +118,7 @@ class TaskLogger(BaseLogger):
             screenshot_path=screenshot_path,
             performance=performance or {},
             tokens_used=tokens_used or {},
+            success=success,
         )
         
         # Append to JSONL file (one line per step)
@@ -128,7 +134,7 @@ class TaskLogger(BaseLogger):
         model_config: Dict[str, Any],
     ) -> None:
         """Log task initialization."""
-        # 🔒 脱敏 model_config，不保存 API Key
+        # [SECURITY] 脱敏 model_config，不保存 API Key
         sanitized_model_config = model_config.copy() if model_config else {}
         if "api_key" in sanitized_model_config:
             sanitized_model_config["api_key"] = "********"

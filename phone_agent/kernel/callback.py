@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (C) 2025 PhoneAgent Contributors
 # Licensed under AGPL-3.0
-#
-# 部分代码参考自 android-action-kernel 项目
-# 原始项目: https://github.com/xjxia/android-action-kernel
-# 许可协议: MIT License
 
 """
 统一的步骤回调接口
@@ -129,7 +125,7 @@ class AsyncStepCallback:
     ) -> None:
         """同步接口，直接调用同步回调"""
         # AgentCallback.on_step_complete 是同步方法，直接调用即可
-        # ⚠️ 注意：AgentCallback 不接受 screenshot_path 参数，因为截图由 AgentService 统一管理
+        # [WARN] 注意：AgentCallback 不接受 screenshot_path 参数，因为截图由 AgentService 统一管理
         self._sync_callback.on_step_complete(step, success, thinking, observation)
     
     def on_error(self, error: str) -> None:

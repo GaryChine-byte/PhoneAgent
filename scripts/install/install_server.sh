@@ -328,7 +328,7 @@ setup_frp() {
             ;;
     esac
     
-    FRP_VERSION="0.52.0"
+    FRP_VERSION="0.61.1"
     FRP_FILE="frp_${FRP_VERSION}_linux_${FRP_ARCH}.tar.gz"
     FRP_DIR="frp_${FRP_VERSION}_linux_${FRP_ARCH}"
     

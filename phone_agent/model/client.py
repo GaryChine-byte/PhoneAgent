@@ -3,13 +3,16 @@
 # Modified: Copyright (C) 2025 PhoneAgent Contributors (AGPL-3.0)
 # Based on: https://github.com/zai-org/Open-AutoGLM
 
-"""Model client for AI inference using OpenAI-compatible API."""
+"""使用OpenAI兼容API的AI推理模型客户端"""
 
 import json
+import logging
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Union
 
 from openai import OpenAI
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -22,7 +25,7 @@ class ModelConfig:
     max_tokens: int = 3000
     temperature: float = 0.0
     top_p: float = 0.85
-    frequency_penalty: float = 0.2
+    frequency_penalty: float = 0.0  # [CHANGED] 智谱API不支持非0的frequency_penalty
     extra_body: dict[str, Any] = field(
         default_factory=lambda: {"skip_special_tokens": False}
     )
@@ -33,7 +36,7 @@ class ModelResponse:
     """Response from the AI model."""
 
     thinking: str
-    action: str
+    action: Union[dict, str]  # [Phase 4] 可以是 dict (优先) 或 str (兼容)
     raw_content: str
     usage: dict[str, Any] | None = None  # Token usage info
 
@@ -76,13 +79,22 @@ class ModelClient:
         if self.config.frequency_penalty != 0.0:
             request_params["frequency_penalty"] = self.config.frequency_penalty
         
-        # 只有当 extra_body 不为空时才添加
-        if self.config.extra_body:
-            request_params["extra_body"] = self.config.extra_body
+        # extra_body: 智谱API不支持，跳过
+        # if self.config.extra_body:
+        #     request_params["extra_body"] = self.config.extra_body
         
         response = self.client.chat.completions.create(**request_params)
 
         raw_content = response.choices[0].message.content
+        
+        # 检查是否因 max_tokens 截断
+        finish_reason = response.choices[0].finish_reason
+        if finish_reason == "length":
+            logger.warning(
+                f"模型输出因 max_tokens 限制被截断！"
+                f"当前 max_tokens={self.config.max_tokens}，"
+                f"建议增加到 4096 或更高"
+            )
 
         # Parse thinking and action from response
         thinking, action = self._parse_response(raw_content)
@@ -141,7 +153,7 @@ class ModelClient:
             "max_tokens": self.config.max_tokens,
             "temperature": temperature if temperature is not None else self.config.temperature,
             "top_p": self.config.top_p,
-            "response_format": {"type": "json_object"},  # 🆕 强制JSON输出
+            "response_format": {"type": "json_object"},  # [NEW] 强制JSON输出
         }
         
         # 只有当 frequency_penalty 不为 0 时才添加
@@ -182,22 +194,31 @@ class ModelClient:
             usage=usage
         )
 
-    def _parse_response(self, content: str) -> tuple[str, str]:
+    def _parse_response(self, content: str) -> tuple[str, Union[dict, str]]:
         """
         Parse the model response into thinking and action parts.
         
+        [Phase 4 完成] 职责已简化，委托给 ResponseParser
+        
+        现在只负责：
+        - 调用 ResponseParser 识别格式
+        - 返回 (thinking, action_data)
+          - action_data 可以是 dict (优先) 或 str (兼容)
+        
         支持的模型和格式：
+        - Vision Kernel (XML+JSON混合): <thinking>...</thinking><tool_call>{...}</tool_call>
         - autoglm-phone (官方推荐): <think>...</think><answer>...</answer>
         - glm-4.1v-thinking-flash (免费): {think}...{action}... 或 box格式
         - glm-4.1v-thinking-flashx (高并发): 同thinking-flash
         - 通用兜底: JSON格式 或 纯文本提取do(...)
         
         格式优先级：
-        1. AutoGLM 标准格式（最优先）
-        2. JSON 格式（明确、易调试）
-        3. GLM-Thinking 多行格式
-        4. GLM-Thinking Box格式
-        5. 纯文本提取（兜底）
+        1. XML+JSON混合格式（Vision Kernel标准）
+        2. AutoGLM 标准格式
+        3. JSON 格式（明确、易调试）
+        4. GLM-Thinking 多行格式
+        5. GLM-Thinking Box格式
+        6. 纯文本提取（兜底）
 
         Args:
             content: Raw response content.
@@ -205,17 +226,84 @@ class ModelClient:
         Returns:
             Tuple of (thinking, action).
         """
-        import re
-        import json
+        from phone_agent.model.response_parser import ResponseParser
         
-        # 格式1: AutoGLM 标准格式 <think>...</think><answer>...</answer>
+        # [Phase 4 完成] 委托给 ResponseParser 处理所有格式识别
+        return ResponseParser.parse(content)
+        
+        # 以下代码已移至 response_parser.py，保留注释供参考
+        # 格式1: Vision Kernel XML+JSON混合格式 <thinking>...</thinking><tool_call>{JSON}</tool_call>
+        r"""
+        if "<thinking>" in content and "<tool_call>" in content:
+            try:
+                # 提取thinking部分
+                thinking_match = re.search(r'<thinking>(.*?)</thinking>', content, re.DOTALL)
+                thinking = thinking_match.group(1).strip() if thinking_match else ""
+                
+                # 提取tool_call中的内容
+                tool_call_match = re.search(r'<tool_call>(.*?)</tool_call>', content, re.DOTALL)
+                if tool_call_match:
+                    tool_call_content = tool_call_match.group(1).strip()
+                    
+                    # 尝试解析为JSON（标准格式）
+                    try:
+                        tool_data = json.loads(tool_call_content)
+                        # 检查是否是标准的JSON格式（action作为单独字段）
+                        if isinstance(tool_data, dict) and "action" in tool_data:
+                            action_name = tool_data.get("action", "")
+                            
+                            # 检查action是否包含参数（错误格式）
+                            if "(" in action_name or ")" in action_name:
+                                # 错误格式："action": "Type(text='xxx')"
+                                logger.warning(f"检测到错误的action格式（参数在action字符串中）: {action_name}")
+                                # 尝试解析并转换为标准格式（容错处理）
+                                # 暂时返回原始格式，让handler处理
+                                return thinking, tool_call_content
+                            
+                            # 标准格式：将JSON转换为 do() 调用格式（保持向后兼容）
+                            # {"action": "tap", "coordinates": [x, y]} -> do(action="tap", coordinates=[x, y])
+                            params = {k: v for k, v in tool_data.items() if k != "action"}
+                            
+                            # 容错处理：如果模型错误输出 finish，自动纠正为 done
+                            if action_name.lower() == "finish":
+                                action_name = "done"
+                            
+                            # 构造 do() 格式参数字符串
+                            param_parts = [f'action="{action_name}"']
+                            for k, v in params.items():
+                                if isinstance(v, str):
+                                    # 字符串参数需要转义引号
+                                    v_escaped = v.replace('"', '\\"')
+                                    param_parts.append(f'{k}="{v_escaped}"')
+                                elif isinstance(v, list):
+                                    param_parts.append(f'{k}={v}')
+                                else:
+                                    param_parts.append(f'{k}={v}')
+                            param_str = ", ".join(param_parts)
+                            action_str = f'do({param_str})'
+                            
+                            return thinking, action_str
+                            
+                    except json.JSONDecodeError:
+                        # 不是JSON，可能是旧的 do() 格式（向后兼容）
+                        if tool_call_content.startswith('do('):
+                            return thinking, tool_call_content
+                        # 其他情况，返回原始内容
+                        return thinking, tool_call_content
+                        
+            except (AttributeError, Exception) as e:
+                # 如果解析失败，继续尝试其他格式
+                logger.debug(f"XML+JSON格式解析失败: {e}")
+                pass
+        
+        # 格式2: AutoGLM 标准格式 <think>...</think><answer>...</answer>
         if "<answer>" in content:
             parts = content.split("<answer>", 1)
             thinking = parts[0].replace("<think>", "").replace("</think>", "").strip()
             action = parts[1].replace("</answer>", "").strip()
             return thinking, action
         
-        # 格式2: JSON 格式 {"think": "...", "action": "..."}
+        # 格式3: JSON 格式 {"think": "...", "action": "..."} (旧Vision格式，保留兼容)
         if content.strip().startswith("{") and '"think"' in content and '"action"' in content:
             try:
                 # 尝试解析 JSON
@@ -239,7 +327,7 @@ class ModelClient:
                     action = action_match.group(1).strip()
                     return thinking, action
         
-        # 格式3: GLM-4.1V-Thinking 格式 {think}...{action}... 
+        # 格式4: GLM-4.1V-Thinking 格式 {think}...{action}... 
         # 包括换行的情况：{think}...\n{action}...
         if "{think}" in content and "{action}" in content:
             think_match = re.search(r'\{think\}(.*?)\{action\}', content, re.DOTALL)
@@ -247,14 +335,14 @@ class ModelClient:
                 thinking = think_match.group(1).strip()
                 # 提取 {action} 后面的 do(...) 指令
                 action_section = content.split("{action}")[1]
-                # 在 action section 中找 do(...) 或 finish(...)
+                # 在 action section 中找 do(...) 或 finish(...)[容错：finish已废弃]
                 action_match = re.search(r'((?:do|finish)\([^)]+\))', action_section)
                 action = action_match.group(1).strip() if action_match else action_section.split('\n')[0].strip()
                 # 移除可能的注释
                 action = re.sub(r'//[^\n]*', '', action).strip()
                 return thinking, action
         
-        # 格式3: GLM-4.1V-Thinking 格式 {think>...}<|begin_of_box|>...<|end_of_box|>
+        # 格式5: GLM-4.1V-Thinking 格式 {think>...}<|begin_of_box|>...<|end_of_box|>
         if "{think>" in content or "{think}" in content:
             # 提取 thinking 部分
             think_match = re.search(r'\{think[>]?(.*?)\}', content, re.DOTALL)
@@ -282,12 +370,12 @@ class ModelClient:
             
             return thinking, action
         
-        # 格式4: GLM-4.1V 输出 <think>... 但没有闭合标签和 <answer>
-        # 这种情况下，thinking 太长被截断了，直接返回空 thinking 和原内容作为 action
-        # 因为 parse_action 会失败，agent 会自动调用 finish
-        if "<think>" in content:
+        # 格式6: GLM-4.1V 输出 <think>... 但没有闭合标签和 <answer>
+        # 或者输出了 </think> 但没有 <answer> 标签
+        # 这种情况下，thinking 太长被截断了，或者模型输出格式不标准
+        if "<think>" in content or "</think>" in content:
             # 尝试提取一个合理的 action（可能在最后）
-            # 查找 do(...) 或 finish(...) 模式
+            # 查找 do(...) 或 finish(...)[容错] 模式
             action_pattern = r'((?:do|finish)\([^)]+\))'
             matches = re.findall(action_pattern, content)
             if matches:
@@ -300,17 +388,17 @@ class ModelClient:
                 thinking = thinking_text[-500:] if len(thinking_text) > 500 else thinking_text
                 return thinking, action
         
-        # 默认：尝试从任何格式中提取 do(...) 或 finish(...) 指令
+        # 默认：尝试从任何格式中提取 do(...) 指令（finish已废弃，仅作容错）
         # 这是最后的兜底方案，用于处理各种奇怪的输出格式
         
-        # 使用正则提取所有 do(...) 或 finish(...) 模式
+        # 使用正则提取所有 do(...) 或 finish(...)[容错] 模式
         # 支持嵌套括号和引号
         all_matches = []
         
-        # 方法1: 找到所有完整的 do(...) 或 finish(...) 调用
+        # 方法1: 找到所有完整的 do(...) 或 finish(...)[容错] 调用
         # 改进的正则：匹配 do( 或 finish( 后面的内容，直到找到匹配的 )
-        # 支持引号和嵌套
-        for match in re.finditer(r'((?:do|finish)\s*\([^()]*(?:\([^()]*\)[^()]*)*\))', content):
+        # 支持引号和嵌套，也支持数组 [x, y]
+        for match in re.finditer(r'((?:do|finish)\s*\([^()]*(?:\[[^\]]*\])?[^()]*(?:\([^()]*\)[^()]*)*\))', content):
             all_matches.append(match.group(1))
         
         if all_matches:
@@ -326,6 +414,7 @@ class ModelClient:
         
         # 完全无法解析，返回空thinking和原内容（会导致 parse_action 失败）
         return "", content
+        """
 
 
 class MessageBuilder:

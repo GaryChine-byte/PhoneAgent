@@ -1,3 +1,7 @@
+#!/usr/bin/env python3
+# Copyright (C) 2025 PhoneAgent Contributors
+# Licensed under AGPL-3.0
+
 """
 模型调用统计 API
 
@@ -46,7 +50,7 @@ def _get_cached(key: str):
     if key in _cache:
         timestamp = _cache_timestamps.get(key, 0)
         if time.time() - timestamp < CACHE_TTL:
-            logger.debug(f"💾 Cache hit: {key}")
+            logger.debug(f"Cache hit: {key}")
             return _cache[key]
         else:
             # 缓存过期，清理
@@ -117,11 +121,11 @@ async def get_model_stats(
             # 缓存结果
             _set_cache(cache_key, stats)
             
-            logger.info(f"📊 Model stats requested: {days} days, {stats['total_calls']} calls")
+            logger.info(f"Model stats requested: {days} days, {stats['total_calls']} calls")
             return stats
             
         except Exception as e:
-            logger.error(f"❌ Failed to get model stats: {e}")
+            logger.error(f"Failed to get model stats: {e}")
             raise
 
 
@@ -168,11 +172,10 @@ async def get_task_model_calls(task_id: str):
         
         try:
             result = await asyncio.to_thread(_query)
-            logger.info(f"📊 Task model calls: {task_id}, {len(result)} calls")
+            logger.info(f"Task model calls: {task_id}, {len(result)} calls")
             return result
-            
         except Exception as e:
-            logger.error(f"❌ Failed to get task model calls: {e}")
+            logger.error(f"Failed to get task model calls: {e}")
             raise
 
 
@@ -234,10 +237,9 @@ async def get_model_call_history(
             if offset == 0:
                 _set_cache(cache_key, result)
             
-            logger.info(f"📊 Model call history: {len(result)} records")
-            return result
-            
+                logger.info(f"Model call history: {len(result)} records")
+                return result
         except Exception as e:
-            logger.error(f"❌ Failed to get model call history: {e}")
+            logger.error(f"Failed to get model call history: {e}")
             raise
 

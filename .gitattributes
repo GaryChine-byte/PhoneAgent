@@ -18,6 +18,9 @@ gradlew text eol=lf
 *.yaml text
 *.yml text
 
+# Windows批处理：强制使用CRLF
+*.bat text eol=crlf
+
 # 二进制文件：不转换
 *.png binary
 *.jpg binary
@@ -28,3 +31,5 @@ gradlew text eol=lf
 *.apk binary
 *.aab binary
 *.jar binary
+*.so binary
+*.zip binary

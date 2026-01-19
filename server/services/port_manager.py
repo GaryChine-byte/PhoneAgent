@@ -1,3 +1,7 @@
+#!/usr/bin/env python3
+# Copyright (C) 2025 PhoneAgent Contributors
+# Licensed under AGPL-3.0
+
 """
 端口管理器 - 防止端口冲突
 确保同一时间一个端口只能被一个设备使用
@@ -30,8 +34,54 @@ class PortManager:
         self.device_ports: Dict[str, int] = {}  # device_id -> port
         self._lock = asyncio.Lock()
         
-        logger.info("🔒 PortManager initialized")
-    
+        logger.info(" PortManager initialized")     
+    async def cleanup_all_adb_connections(self, port_range_start: int = 6100, port_range_end: int = 6199):
+        """
+        清理所有 ADB 连接（服务器启动时调用）
+        
+        用于解决服务器重启后 ADB 连接残留导致端口被占用的问题
+        
+        Args:
+            port_range_start: 端口范围起始
+            port_range_end: 端口范围结束
+        """
+        import subprocess
+        
+        logger.info(f"🧹 开始清理 ADB 连接 (端口范围: {port_range_start}-{port_range_end})...")
+        
+        disconnected_count = 0
+        checked_count = 0
+        
+        for port in range(port_range_start, port_range_end + 1):
+            checked_count += 1
+            adb_address = f"localhost:{port}"
+            
+            try:
+                # 尝试断开连接（即使没有连接也不会报错）
+                result = subprocess.run(
+                    ["adb", "disconnect", adb_address],
+                    capture_output=True,
+                    text=True,
+                    timeout=2
+                )
+                
+                # 检查是否真的断开了连接
+                if "disconnected" in result.stdout.lower():
+                    logger.info(f"  🔌 断开残留连接: {adb_address}")
+                    disconnected_count += 1
+                
+            except subprocess.TimeoutExpired:
+                logger.warning(f" 断开连接超时: {adb_address}")
+            except Exception as e:
+                logger.debug(f" 断开连接失败 {adb_address}: {e}")
+        
+        logger.info(f" ADB 连接清理完成: 检查了 {checked_count} 个端口，断开了 {disconnected_count} 个残留连接")
+        
+        # 清空内存中的端口分配记录
+        async with self._lock:
+            self.port_allocations.clear()
+            self.device_ports.clear()
+            logger.info(" 清空了内存中的端口分配记录")     
     async def allocate_port(
         self, 
         device_id: str, 
@@ -56,11 +106,11 @@ class PortManager:
             if device_id in self.device_ports:
                 old_port = self.device_ports[device_id]
                 if old_port == requested_port:
-                    logger.info(f"✅ Device {device_id} already owns port {requested_port}")
+                    logger.info(f" Device {device_id} already owns port {requested_port}")
                     return True, f"Port {requested_port} already allocated to this device"
                 else:
                     # 设备重新连接，释放旧端口
-                    logger.info(f"🔄 Device {device_id} switching from port {old_port} to {requested_port}")
+                    logger.info(f" Device {device_id} switching from port {old_port} to {requested_port}")
                     await self._release_port_internal(old_port)
             
             # 检查端口是否被占用
@@ -70,14 +120,14 @@ class PortManager:
                 
                 if force:
                     # 强制分配，踢掉原设备
-                    logger.warning(f"⚠️  Force allocating port {requested_port}: kicking out device {existing_device}")
+                    logger.warning(f" Force allocating port {requested_port}: kicking out device {existing_device}")
                     await self._release_port_internal(requested_port)
                 else:
                     # 拒绝分配
                     allocated_at = existing['allocated_at']
                     elapsed = (datetime.now() - allocated_at).total_seconds()
                     logger.warning(
-                        f"❌ Port {requested_port} is occupied by device {existing_device} "
+                        f" Port {requested_port} is occupied by device {existing_device} "
                         f"(allocated {elapsed:.0f}s ago)"
                     )
                     return False, (
@@ -93,7 +143,7 @@ class PortManager:
             }
             self.device_ports[device_id] = requested_port
             
-            logger.info(f"✅ Allocated port {requested_port} to device {device_id} ({device_name})")
+            logger.info(f" Allocated port {requested_port} to device {device_id} ({device_name})")
             return True, f"Port {requested_port} successfully allocated"
     
     async def release_port(self, device_id: Optional[str] = None, port: Optional[int] = None) -> bool:

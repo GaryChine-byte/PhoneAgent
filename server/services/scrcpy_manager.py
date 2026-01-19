@@ -76,12 +76,10 @@ class ScrcpySession:
             return
         
         try:
-            logger.info(f"🚀 Starting scrcpy H.264 stream for device: {self.device_id}")
-            
+            logger.info(f" Starting scrcpy H.264 stream for device: {self.device_id}")
             # 转换 device_id 格式（device_6100 → localhost:6100）
             adb_address = self._get_adb_address()
-            logger.info(f"📱 ADB address: {adb_address}")
-            
+            logger.info(f" ADB address: {adb_address}")
             # 步骤 1: 清理已有的 scrcpy server
             self._cleanup_existing_server(adb_address)
             
@@ -97,8 +95,8 @@ class ScrcpySession:
             self._connect_tcp_socket()
             
             self.is_running = True
-            logger.info(f"✅ Scrcpy H.264 stream started on port {self.scrcpy_port}")
-            logger.info(f"📊 Config: {max_size}p, {bitrate}bps, {framerate}fps")
+            logger.info(f" Scrcpy H.264 stream started on port {self.scrcpy_port}")
+            logger.info(f" Config: {max_size}p, {bitrate}bps, {framerate}fps")
             
             # 步骤 5: 启动 NAL 单元读取线程
             self._read_thread = threading.Thread(
@@ -108,7 +106,7 @@ class ScrcpySession:
             self._read_thread.start()
             
         except Exception as e:
-            logger.error(f"❌ Failed to start scrcpy: {e}", exc_info=True)
+            logger.error(f" Failed to start scrcpy: {e}", exc_info=True)
             self.stop()
             raise
     
@@ -249,7 +247,7 @@ class ScrcpySession:
                 try:
                     chunk = self.tcp_socket.recv(16384)  # 16KB chunks
                     if not chunk:
-                        logger.warning(f"⚠️ No more data from scrcpy socket for {self.device_id}")
+                        logger.warning(f" No more data from scrcpy socket for {self.device_id}")
                         break
                 except socket.timeout:
                     # Socket 超时，继续等待
@@ -257,12 +255,12 @@ class ScrcpySession:
                 except OSError as e:
                     # 处理文件描述符错误（例如连接关闭）
                     if e.errno == 9:  # Bad file descriptor
-                        logger.warning(f"⚠️ Socket closed for {self.device_id}")
+                        logger.warning(f" Socket closed for {self.device_id}")
                     else:
-                        logger.error(f"❌ Socket OS error: {e}")
+                        logger.error(f" Socket OS error: {e}")
                     break
                 except Exception as e:
-                    logger.error(f"❌ Socket read error: {e}")
+                    logger.error(f" Socket read error: {e}")
                     break
                 
                 # 2. 追加到缓冲区
@@ -282,7 +280,7 @@ class ScrcpySession:
                         self._nal_queue.put(nal_unit, block=False)
                         nal_count += 1
                         if nal_count % 100 == 0:
-                            logger.debug(f"📊 Processed {nal_count} NAL units")
+                            logger.debug(f" Processed {nal_count} NAL units")
                     except queue.Full:
                         # 队列满，丢弃旧帧
                         try:
@@ -292,7 +290,7 @@ class ScrcpySession:
                             pass
         
         except Exception as e:
-            logger.error(f"❌ Error reading NAL units: {e}", exc_info=True)
+            logger.error(f" Error reading NAL units: {e}", exc_info=True)
         finally:
             logger.info(f"🛑 NAL reader stopped for {self.device_id}, total: {nal_count} NAL units")
     
@@ -369,7 +367,7 @@ class ScrcpySession:
                 # 标记初始化数据就绪
                 if not self._init_ready.is_set():
                     self._init_ready.set()
-                    logger.info("✅ Init data ready (SPS + PPS + IDR)")
+                    logger.info(" Init data ready (SPS + PPS + IDR)")
     
     def get_init_data(self) -> Optional[bytes]:
         """

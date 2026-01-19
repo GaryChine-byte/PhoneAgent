@@ -70,25 +70,25 @@ class AntiDetection:
         """
         # 默认配置
         self.config = {
-            "enabled": False,  # ✅ 默认关闭（避免影响点击准确性）
-            "level": "low",    # ✅ 默认低延迟
+            "enabled": False,  # [OK] 默认关闭（避免影响点击准确性）
+            "level": "low",    # [OK] 默认低延迟
             
             # 功能开关
             "enable_time_random": True,       # 时间随机化
-            "enable_position_random": False,  # ✅ 默认关闭坐标随机化
+            "enable_position_random": False,  # [OK] 默认关闭坐标随机化
             "enable_bezier_swipe": True,      # 贝塞尔曲线滑动
             "enable_typing_simulation": True, # 输入模拟
-            "enable_exploration": False,      # ✅ 默认关闭探索行为
+            "enable_exploration": False,      # [OK] 默认关闭探索行为
             
             # 时间配置
             "delay_levels": {
-                "low": {"min": 0.2, "max": 0.5},      # ✅ 极速模式
-                "medium": {"min": 0.3, "max": 1.0},   # ✅ 标准模式
-                "high": {"min": 0.5, "max": 2.0}      # ✅ 谨慎模式
+                "low": {"min": 0.2, "max": 0.5},      # [OK] 极速模式
+                "medium": {"min": 0.3, "max": 1.0},   # [OK] 标准模式
+                "high": {"min": 0.5, "max": 2.0}      # [OK] 谨慎模式
             },
             
             # 坐标随机化配置
-            "position_offset_percentage": 0.02,  # ✅ 降低到±2%（原20%太大）
+            "position_offset_percentage": 0.02,  # [OK] 降低到±2%（原20%太大）
             
             # 贝塞尔曲线配置
             "bezier_steps": 20,                 # 曲线分段数

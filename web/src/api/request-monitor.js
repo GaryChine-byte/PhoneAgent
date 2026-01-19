@@ -33,8 +33,7 @@ class RequestMonitor {
     })
     
     if (this.verboseLogging) {
-      console.log(`🚀 [Request ${requestId}] ${config.method?.toUpperCase()} ${config.url}`)
-    }
+ console.log(` [Request ${requestId}] ${config.method?.toUpperCase()} ${config.url}`)     }
   }
   
   /**
@@ -96,7 +95,7 @@ class RequestMonitor {
     const isTimeout = duration > this.timeoutThreshold
     
     if (isTimeout || !success || this.verboseLogging) {
-      const emoji = isTimeout ? '⏱️' : isSlow ? '⚠️' : success ? '✅' : '❌'
+      const emoji = isTimeout ? '⏱️' : isSlow ? '⏳' : success ? '✓' : '❌'
       const level = isTimeout ? 'error' : isSlow ? 'warn' : success ? 'log' : 'error'
       
       console[level](
@@ -208,15 +207,14 @@ class RequestMonitor {
     const slowEndpoints = this.getSlowEndpoints()
     const activeRequests = this.getActiveRequests()
     
-    console.group('📊 API 请求诊断报告')
-    
+ console.group(' API 请求诊断报告')     
     console.log(`总请求数: ${stats.totalRequests}`)
     console.log(`活跃请求: ${stats.activeRequests}`)
     console.log(`慢请求阈值: ${stats.slowThreshold}ms`)
     console.log(`超时阈值: ${stats.timeoutThreshold}ms`)
     
     if (slowEndpoints.length > 0) {
-      console.group('⚠️ 慢端点 (耗时超过阈值或慢请求率 ≥10%)')
+      console.group('慢端点 (耗时超过阈值或慢请求率 ≥10%)')
       slowEndpoints.forEach(endpoint => {
         console.warn(
           `${endpoint.endpoint}\n` +
@@ -229,9 +227,9 @@ class RequestMonitor {
     }
     
     if (activeRequests.length > 0) {
-      console.group('🔄 当前活跃请求')
+      console.group('当前活跃请求')
       activeRequests.forEach(req => {
-        const emoji = req.isTimeout ? '⏱️' : req.isSlow ? '⚠️' : '🔄'
+        const emoji = req.isTimeout ? '⏱️' : req.isSlow ? '⏳' : '✓'
         console.log(`${emoji} ${req.method} ${req.url} - ${req.duration}ms`)
       })
       console.groupEnd()
@@ -251,8 +249,7 @@ class RequestMonitor {
    */
   clearStats() {
     this.stats.clear()
-    console.log('✅ 请求统计已清除')
-  }
+ console.log(' 请求统计已清除')   }
 }
 
 // 创建全局实例

@@ -1,7 +1,11 @@
+#!/usr/bin/env python3
+# Copyright (C) 2025 PhoneAgent Contributors
+# Licensed under AGPL-3.0
+
 """
 App静态配置 - 143个预置应用的名称到包名映射
 
-📦 提供开箱即用的常用应用配置，包括：
+ 提供开箱即用的常用应用配置，包括：
   - 社交通讯: 微信、QQ、钉钉、飞书、Telegram、WhatsApp、Slack、Teams、Zoom
   - 购物支付: 淘宝、京东、拼多多、支付宝、美团、Amazon、eBay
   - 视频娱乐: 抖音、TikTok、B站、小红书、快手、YouTube、Netflix、QQ音乐、Spotify
@@ -12,12 +16,12 @@ App静态配置 - 143个预置应用的名称到包名映射
   - 浏览器: Chrome、Firefox、Edge、Opera、Brave、UC、夸克、QQ浏览器
   - 其他: AI助手、办公工具、云存储、输入法等
 
-💡 使用方式:
+[NOTE] 使用方式:
   1. 直接调用: get_package_name("微信") → "com.tencent.mm"
   2. 动态配置: 通过前端"应用配置"页面添加/编辑应用
   3. 配置文件: 用户修改会保存到 data/app_config.json
 
-🔧 高级功能请使用 AppConfigManager:
+ 高级功能请使用 AppConfigManager:
   from phone_agent.config.app_manager import get_app_manager
   manager = get_app_manager()
   app = manager.find_app("微信")  # 支持别名、分类等
@@ -207,6 +211,14 @@ APP_PACKAGES: dict[str, str] = {
     "Coursera": "org.coursera.android",
     "Duolingo": "com.duolingo",
     "Khan Academy": "org.khanacademy.android",
+    
+    # ========================================
+    # 社区论坛 (Community & Forums)
+    # ========================================
+    "Reddit": "com.reddit.frontpage",
+    "Twitter": "com.twitter.android",
+    "X": "com.twitter.android",  # Twitter更名为X
+    "Facebook": "com.facebook.katana",
     
     # ========================================
     # 拍照摄影 (Photography)

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (C) 2025 PhoneAgent Contributors
+# Licensed under AGPL-3.0
+
 """
 语音API - 统一的语音转文字和文字转语音接口
 

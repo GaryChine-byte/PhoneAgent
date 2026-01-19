@@ -8,7 +8,7 @@ data/
 ├── anti_detection_config.json        # 防检测配置（默认配置，可直接使用）
 ├── shortcuts.json                    # 快捷指令（默认配置，可直接使用）
 ├── prompt_cards.json                 # 提示词卡片（默认配置，可直接使用）
-├── client_device.db                  # 客户端数据库（运行时自动生成）
+├── agent.db                  # 客户端数据库（运行时自动生成）
 └── screenshots/                      # 截图缓存（运行时自动生成）
 ```
 
@@ -95,16 +95,16 @@ AI 执行任务时的行为提示，用于优化执行效果。
 
 ## 🗄️ 数据库文件
 
-### `client_device.db`
+### `agent.db`
 
-**用途**：客户端设备注册信息
+**用途**：Agent服务统一数据库（任务、设备、模型调用）
 
 **字段**：
 - 设备 ID、设备名称
 - FRP 端口映射
 - 最后在线时间
 
-**位置**：`data/client_device.db`
+**位置**：`data/agent.db`
 
 ## 📸 Screenshots 目录
 
@@ -124,7 +124,7 @@ rm -rf data/screenshots/*
    - ✅ 可根据需要直接编辑配置文件
 
 2. **运行时生成**：
-   - `client_device.db` - 服务启动时自动创建
+   - `agent.db` - 服务启动时自动创建
    - `screenshots/` - 任务执行时自动创建
 
 3. **配置修改**：

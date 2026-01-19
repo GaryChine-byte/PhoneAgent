@@ -75,8 +75,19 @@
         <div class="task-footer">
           <div class="task-meta-group">
             <div class="task-meta">
-              <el-icon><Cellphone /></el-icon>
+              <!-- 根据设备类型显示不同图标 -->
+              <el-icon v-if="task.device_type === 'pc'"><Monitor /></el-icon>
+              <el-icon v-else><Cellphone /></el-icon>
               <span>{{ task.device_id || '自动分配' }}</span>
+              <!-- 设备类型标签 -->
+              <el-tag 
+                v-if="task.device_type" 
+                size="small" 
+                :type="task.device_type === 'pc' ? 'warning' : 'primary'"
+                style="margin-left: 8px;"
+              >
+                {{ task.device_type === 'pc' ? 'PC' : '手机' }}
+              </el-tag>
             </div>
             
             <div class="task-meta" v-if="task.duration">
@@ -91,8 +102,7 @@
           </div>
 
           <div class="task-actions">
-            <!-- ✅ pending 和 running 状态都显示取消按钮 -->
-            <el-button
+ <!-- pending 和 running 状态都显示取消按钮 -->             <el-button
               v-if="task.status === 'pending' || task.status === 'running'"
               type="warning"
               size="small"
@@ -100,8 +110,7 @@
             >
               取消
             </el-button>
-            <!-- ✅ 只有已完成/失败/已取消的任务才显示删除按钮 -->
-            <el-button
+ <!-- 只有已完成/失败/已取消的任务才显示删除按钮 -->             <el-button
               v-if="task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled'"
               type="danger"
               size="small"
@@ -209,7 +218,7 @@
                 
                 <!-- 操作描述 -->
                 <div class="step-action">
-                  <strong>操作：</strong>{{ step.action }}
+                  <strong>操作：</strong>{{ formatDetailAction(step.action) }}
                 </div>
                 
                 <!-- AI观察 -->
@@ -241,6 +250,41 @@
             </el-timeline-item>
           </el-timeline>
         </el-tab-pane>
+        
+        <!-- 记录内容标签页 -->
+        <el-tab-pane label="记录内容">
+          <div v-if="selectedTask?.important_content && selectedTask.important_content.length > 0">
+            <el-timeline>
+              <el-timeline-item
+                v-for="(record, index) in selectedTask.important_content"
+                :key="index"
+                :timestamp="formatFullTime(record.timestamp)"
+                placement="top"
+              >
+                <el-card class="record-card" shadow="never">
+                  <div class="record-header">
+                    <el-tag :type="getCategoryColor(record.category)" size="small">
+                      {{ record.category || '一般' }}
+                    </el-tag>
+                    <span v-if="record.reason" class="record-reason">
+                      {{ record.reason }}
+                    </span>
+                  </div>
+                  <p class="record-content">{{ record.content }}</p>
+                </el-card>
+              </el-timeline-item>
+            </el-timeline>
+          </div>
+          <el-empty v-else description="暂无记录内容" />
+        </el-tab-pane>
+        
+        <!-- 任务清单标签页 -->
+        <el-tab-pane label="任务清单">
+          <div v-if="selectedTask?.todos" class="todos-content">
+            <div class="markdown-content" v-html="renderedTodos"></div>
+          </div>
+          <el-empty v-else description="暂无任务清单" />
+        </el-tab-pane>
       </el-tabs>
     </el-dialog>
     </div>
@@ -251,11 +295,12 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Refresh, Cellphone, Timer, Picture, Delete, Coin } from '@element-plus/icons-vue'
+import { Refresh, Cellphone, Timer, Picture, Delete, Coin, Collection, Checked, Monitor } from '@element-plus/icons-vue'
 import { useTaskStore } from '@/stores/task'
 import { taskApi } from '@/api'
 import TopNavigation from '@/components/TopNavigation.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import { marked } from 'marked'
 
 const router = useRouter()
 const taskStore = useTaskStore()
@@ -269,6 +314,15 @@ const selectAll = ref(false)  // 全选状态
 
 // API基础URL
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || ''
+
+// Markdown渲染
+const renderedTodos = computed(() => {
+  if (!selectedTask.value?.todos) return ''
+  return marked(selectedTask.value.todos, {
+    breaks: true,
+    gfm: true
+  })
+})
 
 const tasks = computed(() => taskStore.tasks)
 const isMobile = computed(() => window.innerWidth < 768)
@@ -395,22 +449,78 @@ async function showTaskDetail(task) {
 function getScreenshotUrl(screenshotPath, size = 'small') {
   if (!screenshotPath) return ''
   
+  console.log('[Tasks.vue getScreenshotUrl] Input:', screenshotPath, 'Size:', size)
+  
   // 如果是完整URL，直接返回
   if (screenshotPath.startsWith('http://') || screenshotPath.startsWith('https://')) {
     return screenshotPath
   }
   
-  // 如果是相对路径（如 screenshots/task_xxx/step_001_small.jpg）
-  if (screenshotPath.startsWith('screenshots/')) {
-    // 替换尺寸后缀
-    const basePath = screenshotPath.replace(/_[a-z]+\.jpg$/, '')
-    return `${apiBaseUrl}/api/v1/${basePath}_${size}.jpg`
+  // 处理路径格式
+  let cleanPath = screenshotPath
+  
+  // 移除可能的 "data/screenshots/" 前缀
+  if (cleanPath.startsWith('data/screenshots/')) {
+    cleanPath = cleanPath.replace('data/screenshots/', '')
+  }
+  // 移除可能的 "data/" 前缀
+  else if (cleanPath.startsWith('data/')) {
+    cleanPath = cleanPath.replace('data/', '')
+  }
+  // 移除可能的 "screenshots/" 前缀
+  else if (cleanPath.startsWith('screenshots/')) {
+    cleanPath = cleanPath.replace('screenshots/', '')
   }
   
-  // 如果只是文件名（如 step_001_small.jpg）
-  const fileName = screenshotPath.split('/').pop()
-  const baseName = fileName.replace(/_[a-z]+\.jpg$/, '')
-  return `${apiBaseUrl}/api/v1/screenshots/${selectedTask.value.task_id}/${baseName}_${size}.jpg`
+  console.log('[Tasks.vue getScreenshotUrl] Clean path:', cleanPath)
+  
+  // 路径格式：tasks/{task_id}/steps/step_001_medium.jpg
+  // 需要替换尺寸：medium -> small/medium/ai/original
+  
+  // 提取基础路径和原始尺寸
+  const match = cleanPath.match(/^(.+)_(small|medium|ai|thumbnail|original)\.(jpg|png|jpeg)$/i)
+  
+  if (match) {
+    const [, basePath, currentSize, ext] = match
+    // basePath: "tasks/abc123/steps/step_001"
+    
+    // 如果请求的尺寸与当前尺寸相同，直接使用
+    let targetSize = size
+    if (size === 'medium' && currentSize === 'ai') {
+      // 预览大图时使用 medium，如果当前是 ai，则保持 ai
+      targetSize = 'ai'
+    }
+    
+    // 构建新URL
+    const finalUrl = `${apiBaseUrl}/api/v1/screenshots/${basePath}_${targetSize}.${ext}`
+    console.log('[Tasks.vue getScreenshotUrl] Output:', finalUrl)
+    return finalUrl
+  }
+  
+  // 如果路径格式不符合预期，尝试直接拼接（兜底）
+  console.warn('[Tasks.vue getScreenshotUrl] Path format unexpected, using fallback:', cleanPath)
+  
+  // 检查是否已经包含尺寸后缀
+  if (/_(?:small|medium|ai|thumbnail|original)\.(jpg|png|jpeg)$/i.test(cleanPath)) {
+    // 已有尺寸后缀，直接使用
+    return `${apiBaseUrl}/api/v1/screenshots/${cleanPath}`
+  }
+  
+  // 没有尺寸后缀，添加一个
+  const fallbackUrl = `${apiBaseUrl}/api/v1/screenshots/${cleanPath.replace(/\.(jpg|png|jpeg)$/i, `_${size}.$1`)}`
+  console.log('[Tasks.vue getScreenshotUrl] Fallback output:', fallbackUrl)
+  return fallbackUrl
+}
+
+// 分类颜色映射
+function getCategoryColor(category) {
+  const colorMap = {
+    'financial': 'danger',
+    'personal': 'success',
+    'product': 'warning',
+    'general': 'info'
+  }
+  return colorMap[category] || 'info'
 }
 
 // 状态类型
@@ -487,6 +597,49 @@ function formatFullTime(dateString) {
     second: '2-digit',
     hour12: false
   })
+}
+
+// 格式化动作详情
+function formatDetailAction(action) {
+  if (!action) return '无操作'
+  
+  // 如果是字符串，直接返回
+  if (typeof action === 'string') {
+    return action
+  }
+  
+  // 如果是对象，格式化输出
+  if (typeof action === 'object') {
+    try {
+      const actionType = action.action || action.type || 'Unknown'
+      const details = []
+      
+      // 提取关键信息
+      if (action.coordinates) {
+        details.push(`坐标: (${action.coordinates[0]}, ${action.coordinates[1]})`)
+      }
+      if (action.text) {
+        details.push(`文本: "${action.text}"`)
+      }
+      if (action.reason) {
+        details.push(`原因: ${action.reason}`)
+      }
+      if (action.package_name) {
+        details.push(`应用: ${action.package_name}`)
+      }
+      if (action.message) {
+        details.push(`消息: ${action.message}`)
+      }
+      
+      return details.length > 0 
+        ? `${actionType} - ${details.join(', ')}` 
+        : actionType
+    } catch (e) {
+      return JSON.stringify(action)
+    }
+  }
+  
+  return String(action)
 }
 
 // 生命周期
@@ -684,6 +837,70 @@ onMounted(() => {
 .token-detail-text {
   font-size: 12px;
   color: var(--text-tertiary);
+}
+
+/* 记录卡片样式 */
+.record-card {
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-base);
+  box-shadow: none;
+  padding: var(--space-md);
+}
+
+.record-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
+}
+
+.record-reason {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.record-content {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+
+/* TODO列表样式 */
+.todos-content {
+  padding: var(--space-md);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-base);
+}
+
+.markdown-content {
+  line-height: 1.8;
+  color: var(--text-primary);
+}
+
+.markdown-content :deep(ul) {
+  list-style: none;
+  padding-left: 0;
+}
+
+.markdown-content :deep(li) {
+  padding: var(--space-sm) 0;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.markdown-content :deep(li:last-child) {
+  border-bottom: none;
+}
+
+.markdown-content :deep(input[type="checkbox"]) {
+  margin-right: var(--space-sm);
+  transform: scale(1.2);
+  cursor: pointer;
+}
+
+.markdown-content :deep(li:has(input[checked])) {
+  color: var(--text-tertiary);
+  text-decoration: line-through;
 }
 </style>
 

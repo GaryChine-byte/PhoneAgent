@@ -119,7 +119,7 @@ import {
   ArrowDown,
   Tools,
   Iphone,
-  Coin  // ✅ 新增: 模型统计图标
+  Coin  // 新增: 模型统计图标
 } from '@element-plus/icons-vue'
 
 const router = useRouter()

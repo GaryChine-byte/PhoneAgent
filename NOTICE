@@ -38,21 +38,44 @@ original Open-AutoGLM project:
    - Added anti-detection mechanisms (phone_agent/adb/anti_detection.py)
    - Added device scanning and management (server/services/device_scanner.py)
 
-5. **Commercial Features**
-   - Added licensing system foundation
-   - Added plugin architecture preparation
-   - Added multi-tenant support foundation
-   - Added audit logging infrastructure
+5. **Android Remote Control App**
+   - Added Android remote control app (android-remote-control/)
+   - Replaced Termux deployment with built-in solution
+   - Added FRP client and ADB server integration
+   - Added yadb deployment and management
 
-6. **Android App**
-   - Added Android companion app (android-app/)
-   - Added device-side services and UI
-   - Added voice control integration
-
-7. **Web Interface**
+6. **Web Interface**
    - Added Vue.js-based web interface (web/)
    - Added real-time task monitoring
    - Added device management dashboard
+
+7. **PC Agent**
+   - Added Windows/Mac PC control support
+   - Integrated accessibility tree perception (from MobileAgent PC-Agent)
+   - Added OCR and UI element detection
+
+8. **XML Kernel**
+   - Added fast and accurate UI tree parsing kernel
+   - Improved performance and cost efficiency
+   - Enhanced XML structure analysis
+
+9. **Vision Kernel Improvements**
+   - Upgraded to XML+JSON hybrid output format
+   - Enhanced action parsing robustness
+   - Added lightweight context monitoring
+   - Fixed API compatibility with Zhipu AI models
+
+10. **YADB Connection Stability**
+   - Optimized ADB connection management
+   - Added retry mechanisms for yadb operations
+   - Implemented connection monitoring and auto-reconnect
+   - Reduced cache TTL for faster connection detection
+
+11. **Prompt Cards System**
+   - Added prompt card management functionality
+   - Integrated prompt cards into mobile and PC agents
+   - Created frontend prompt card editor
+   - Enabled custom instruction injection
 
 License Information
 -------------------
@@ -71,41 +94,73 @@ This dual-licensing approach ensures:
 - Strong copyleft protection for new contributions (AGPL-3.0)
 - Clear commercial licensing path for enterprises
 
+Third-Party Open Source Projects
+---------------------------------
+
+This project uses or references the following open source projects:
+
+1. **Open-AutoGLM** (Apache License 2.0)
+   Copyright (c) 2024 ZAI Organization
+   https://github.com/zai-org/Open-AutoGLM
+   - Vision agent architecture foundation
+   - Action handling logic
+   - Screen analysis and UI interaction
+
+2. **Android Use** (MIT License)
+   Copyright (c) 2025 languse-ai
+   https://github.com/languse-ai/android-use
+   - XML Kernel architecture and UI tree parsing approach
+   - Element highlighting and index-based interaction
+   - Non-vision model support strategy
+   Note: Referenced for design inspiration, no direct code copy
+
+3. **MobileAgent PC-Agent** (MIT License)
+   Copyright (c) 2022 mPLUG (Alibaba Tongyi Lab)
+   https://github.com/X-PLUG/MobileAgent/tree/main/PC-Agent
+   - PC accessibility tree perception module (server/pc/pc_perception.py)
+   - IOU calculation algorithm (box_iou function)
+   - OCR and accessibility tree fusion logic
+
+4. **YADB** (LGPL-3.0)
+   Copyright (c) ysbing
+   https://github.com/ysbing/YADB
+   - Chinese keyboard input support
+   - Force screenshot functionality
+   - Clipboard operations
+   Note: Used via subprocess call, not modified
+
+5. **MAI-UI & MobileAgent** (Apache License 2.0, Reference Only)
+   https://github.com/X-PLUG/MobileAgent
+   https://github.com/Starlight0798/MAI-UI
+   - XML+JSON hybrid output format design (reference)
+   - Vision language model interaction patterns (reference)
+   - Action system architecture ideas (reference)
+   Note: Referenced for design inspiration, no direct code copy
+
 Third-Party Dependencies
 ------------------------
 
-This project includes or depends on the following third-party software:
+Key runtime dependencies:
 
 1. **FastAPI** (MIT License)
-   Copyright (c) 2018 Sebastián Ramírez
    https://github.com/tiangolo/fastapi
 
 2. **Pillow** (HPND License)
-   Copyright (c) 1997-2011 by Secret Labs AB
-   Copyright (c) 1995-2011 by Fredrik Lundh
    https://github.com/python-pillow/Pillow
 
 3. **OpenAI Python SDK** (Apache 2.0)
-   Copyright (c) OpenAI
    https://github.com/openai/openai-python
 
 4. **SQLAlchemy** (MIT License)
-   Copyright (c) SQLAlchemy authors and contributors
    https://github.com/sqlalchemy/sqlalchemy
 
-5. **Uvicorn** (BSD 3-Clause License)
-   Copyright (c) Encode
-   https://github.com/encode/uvicorn
-
-6. **Pydantic** (MIT License)
-   Copyright (c) Samuel Colvin and other contributors
+5. **Pydantic** (MIT License)
    https://github.com/pydantic/pydantic
 
-7. **Vue.js** (MIT License)
-   Copyright (c) 2014-present Evan You
+6. **Vue.js** (MIT License)
    https://github.com/vuejs/vue
 
-For a complete list of dependencies, see requirements.txt and package.json.
+For a complete list, see LICENSES_THIRD_PARTY.md, requirements.txt and package.json.
 
 Attribution Requirements
 ------------------------
@@ -151,5 +206,6 @@ For questions regarding licensing or attribution:
 - Project: https://github.com/tmwgsicp/PhoneAgent
 - Original Project: https://github.com/zai-org/Open-AutoGLM
 
-Last Updated: December 22, 2025
+Last Updated: January 18, 2026
+Version: 2.0.0
 

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (C) 2025 PhoneAgent Contributors
+# Licensed under AGPL-3.0
+
 """
 AgentService - Agent 任务管理服务
 
@@ -19,17 +22,17 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 
-from phone_agent.agent import PhoneAgent, AgentConfig
+from phone_agent import PhoneAgent, AgentConfig
 from phone_agent.model import ModelConfig
 from phone_agent.adb import get_screenshot
 from phone_agent.logging import TaskLogger  # 新增: 工程化日志系统
 
 from server.utils.image_utils import compress_screenshot
-from server.utils.log_sanitizer import safe_log_dict  # 🔒 日志脱敏
+from server.utils.log_sanitizer import safe_log_dict
 from server.config import Config
 from server.database.session import get_db
 from server.database import crud
-from server.services.model_call_tracker import track_model_call  # ✅ 新增: 模型调用追踪
+from server.services.model_call_tracker import track_model_call
 import json
 
 logger = logging.getLogger(__name__)
@@ -42,6 +45,7 @@ class TaskStatus(Enum):
     """任务状态"""
     PENDING = "pending"       # 等待执行
     RUNNING = "running"       # 执行中
+    WAITING_FOR_USER = "waiting_for_user" # 等待用户响应
     COMPLETED = "completed"   # 已完成
     FAILED = "failed"         # 失败
     CANCELLED = "cancelled"   # 已取消
@@ -104,6 +108,14 @@ class Task:
     model_name: Optional[str] = None  # 使用的模型名称（用于统计）
     kernel_mode: Optional[str] = None  # 使用的内核模式（xml/vision/auto/planning）
     
+    # 新增：高级特性（Phase 1）
+    important_content: list[Dict[str, Any]] = field(default_factory=list)  # 记录的重要内容
+    todos: Optional[str] = None  # Markdown格式的TODO列表
+    
+    # Ask User机制
+    pending_question: Optional[Dict[str, Any]] = None  # 待回答的问题
+    user_answer: Optional[str] = None  # 用户的回答
+    
     @property
     def duration(self) -> Optional[float]:
         """任务执行时长（秒）"""
@@ -113,7 +125,7 @@ class Task:
     
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
-        # 🔒 安全：脱敏 model_config 中的 API Key
+        # 安全：脱敏 model_config 中的 API Key
         safe_model_config = None
         if self.model_config:
             safe_model_config = self.model_config.copy()
@@ -146,23 +158,55 @@ class AgentCallback:
     Agent 回调接口（同步版本 - 用于在线程池中运行的Agent）
     
     用于在任务执行过程中收集状态信息
+    步骤数据存储在 task.steps 中，前端通过轮询 API 获取
     
-    ⚠️ 关键修复：
-    - XML/Hybrid Agent在线程池中同步运行（run_in_executor）
-    - 回调必须是同步的，通过 asyncio.run_coroutine_threadsafe 调度到事件循环
-    - 否则 async 回调不会被执行，导致实时进度预览卡住
+    Phase 1: 支持高级特性回调
+    - on_record_content: 记录重要内容
+    - on_update_todos: 更新TODO列表
     """
     
-    def __init__(self, task: Task, websocket_broadcast_callback=None, loop=None):
+    def __init__(self, task: Task, loop: Optional[asyncio.AbstractEventLoop] = None, task_logger: Optional[Any] = None):
         self.task = task
-        self.websocket_broadcast_callback = websocket_broadcast_callback
-        self.loop = loop or asyncio.get_event_loop()  # ✅ 保存事件循环引用
+        self.loop = loop # 接收事件循环实例
+        self.task_logger = task_logger # 接收TaskLogger实例
+        # 新增：截图服务
+        from server.services.screenshot_service import get_screenshot_service
+        self.screenshot_service = get_screenshot_service()
+    
+    def on_record_content(self, content: str, category: str = None, reason: str = None):
+        """
+        处理记录重要内容动作（Phase 1）
+        
+        Args:
+            content: 要记录的内容
+            category: 内容分类
+            reason: 记录原因
+        """
+        record = {
+            "content": content,
+            "category": category or "general",
+            "reason": reason,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        self.task.important_content.append(record)
+        logger.info(f" Recorded: [{category}] {content[:50]}...")
+    
+    def on_update_todos(self, todos: str, reason: str = None):
+        """
+        处理更新TODO列表动作（Phase 1）
+        
+        Args:
+            todos: Markdown格式的TODO列表
+            reason: 更新原因
+        """
+        self.task.todos = todos
+        logger.info(f" Updated TODOs: {len(todos.split(chr(10)))} items")
     
     def on_step_start(self, step: int, action: str):
         """步骤开始（同步方法）"""
         # 检查任务是否已被取消
         if self.task.status == TaskStatus.CANCELLED:
-            logger.warning(f"⚠️  Task {self.task.task_id} cancelled, stopping execution")
+            logger.warning(f"Task {self.task.task_id} cancelled, stopping execution")
             raise Exception("Task cancelled by user")
         
         logger.info(f"Task {self.task.task_id} Step {step} started")
@@ -182,103 +226,66 @@ class AgentCallback:
         
         step_data = {
             "step": step,
-            "thinking": thinking,  # ✅ 在步骤开始时就有 thinking
+            "step_type": "llm",  # 🔥 标记为 LLM 步骤
+            "thinking": thinking,
             "action": action_data,
-            "status": "running",  # ✅ 初始状态为 "running"
+            "status": "running",
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "screenshot": None  # 将在步骤完成时填充
         }
         self.task.steps.append(step_data)
-        
-        # ✅ 立即广播步骤开始状态（包含 thinking）
-        if self.websocket_broadcast_callback:
-            try:
-                logger.info(f"📡 [AgentCallback] Broadcasting step start: task_id={self.task.task_id}, step={step}")
-                # ✅ 使用 run_coroutine_threadsafe 从同步线程调度到事件循环
-                future = asyncio.run_coroutine_threadsafe(
-                    self.websocket_broadcast_callback({
-                        "type": "task_step_update",
-                        "data": {
-                            "task_id": self.task.task_id,
-                            "step": step,
-                            "thinking": thinking,  # ✅ 包含 thinking
-                            "action": action_data,
-                            "status": "running",
-                            "timestamp": step_data["timestamp"]
-                        }
-                    }),
-                    self.loop
-                )
-                # ⚠️ 不等待结果，避免阻塞（fire-and-forget）
-            except Exception as e:
-                logger.error(f"❌ Failed to broadcast step start: {e}", exc_info=True)
-        else:
-            logger.warning(f"⚠️  [AgentCallback] No websocket_broadcast_callback set for task {self.task.task_id}")
+        logger.debug(f"Step {step} started and recorded to task.steps")
     
     def on_step_complete(self, step: int, success: bool, thinking: str = "", observation: str = ""):
-        """步骤完成（同步方法，非阻塞）"""
+        """步骤完成（同步方法）"""
         logger.info(f"Task {self.task.task_id} Step {step}: {'success' if success else 'failed'}")
         
-        # ✅ 立即更新步骤状态（不等待截图）
-        self._update_step_status(step, success, thinking, observation, screenshot_paths=None)
+        # 更新步骤状态
+        self._update_step_status(step, success, thinking, observation)
         
-        # ✅ 异步保存截图并广播（fire-and-forget，不阻塞）
-        try:
-            asyncio.run_coroutine_threadsafe(
-                self._save_and_broadcast_step(step, success, thinking, observation),
-                self.loop
-            )
-            # ⚠️ 不等待结果，避免阻塞Agent执行
-        except Exception as e:
-            logger.error(f"Failed to schedule screenshot save for step {step}: {e}")
-    
-    async def _save_and_broadcast_step(self, step: int, success: bool, thinking: str, observation: str):
-        """保存截图并广播（异步，非阻塞）"""
-        # 保存截图
-        screenshot_paths = await self._save_step_screenshot(step)
-        
-        # ✅ 更新任务中的截图路径（异步完成后）
-        if screenshot_paths and self.task.steps:
-            last_step = self.task.steps[-1]
-            step_key = last_step.get("step") if "step" in last_step else last_step.get("step_index")
-            
-            if step_key == step:
-                self.task.steps[-1].update({
-                    "screenshot": screenshot_paths.get("medium"),
-                    "screenshot_small": screenshot_paths.get("small"),
-                    "screenshot_ai": screenshot_paths.get("ai")
-                })
-        
-        # WebSocket实时推送步骤更新（包含截图）
-        if self.websocket_broadcast_callback and self.task.steps:
+        # 记录到JSONL日志（统一处理XML和Vision内核）
+        if self.task_logger:
             try:
-                last_step = self.task.steps[-1]
-                step_key = last_step.get("step") if "step" in last_step else last_step.get("step_index")
-                
-                if step_key == step:
-                    await self.websocket_broadcast_callback({
-                        "type": "task_step_update",
-                        "data": {
-                            "task_id": self.task.task_id,
-                            "step": step,
-                            "thinking": thinking,
-                            "action": last_step.get("action", ""),
-                            "observation": observation,
-                            "screenshot": screenshot_paths.get("small") if screenshot_paths else None,
-                            "success": success,
-                            "status": "completed" if success else "failed",
-                            "timestamp": datetime.now(timezone.utc).isoformat(),
-                            "duration_ms": last_step.get("duration_ms"),
-                            "tokens_used": last_step.get("tokens_used")
-                        }
-                    })
-                    logger.info(f"✅ [WebSocket] Broadcasted step complete: task_id={self.task.task_id}, step={step}, status={'completed' if success else 'failed'}")
+                if self.task.steps and len(self.task.steps) > 0:
+                    last_step = self.task.steps[-1]
+                    # 提取动作信息
+                    action_data = last_step.get("action", {})
+                    if isinstance(action_data, str):
+                        try:
+                            action_data = json.loads(action_data)
+                        except:
+                            action_data = {"raw": action_data}
+                    
+                    self.task_logger.log_step(
+                        task_id=self.task.task_id,
+                        step=step,
+                        timestamp=last_step.get("timestamp", datetime.now(timezone.utc).isoformat()),
+                        thinking=thinking or last_step.get("thinking", ""),
+                        action=action_data,
+                        observation=observation,
+                        screenshot_path=last_step.get("screenshot"),
+                        performance=last_step.get("performance"),
+                        tokens_used=last_step.get("tokens_used"),
+                        success=success
+                    )
+                    logger.debug(f"Logged step {step} to JSONL for task {self.task.task_id}")
             except Exception as e:
-                logger.error(f"❌ [WebSocket] Failed to broadcast step update: {e}", exc_info=True)
+                logger.error(f"Failed to log step to JSONL: {e}")
         
-        return screenshot_paths
+        # 异步保存截图并更新JSONL（不阻塞）
+        if self.loop:
+            try:
+                # 启动异步任务：保存截图 → 更新步骤 → 重新记录JSONL
+                asyncio.run_coroutine_threadsafe(
+                    self._save_screenshot_and_update_log(step),
+                    self.loop
+                )
+            except Exception as e:
+                logger.error(f"Failed to schedule screenshot save for step {step}: {e}")
+        else:
+            logger.warning(f"No event loop available, skipping screenshot save for step {step}")
     
-    def _update_step_status(self, step: int, success: bool, thinking: str, observation: str, screenshot_paths):
+    def _update_step_status(self, step: int, success: bool, thinking: str, observation: str):
         """更新步骤状态（同步）"""
         if self.task.steps and len(self.task.steps) > 0:
             # 更新最后一个步骤的状态
@@ -292,64 +299,183 @@ class AgentCallback:
                     "success": success,
                     "thinking": thinking,
                     "observation": observation,
-                    "screenshot": screenshot_paths.get("medium") if screenshot_paths else None,
-                    "screenshot_small": screenshot_paths.get("small") if screenshot_paths else None,
-                    "screenshot_ai": screenshot_paths.get("ai") if screenshot_paths else None,
                     "completed_at": datetime.now(timezone.utc).isoformat()
                 })
             else:
                 logger.warning(f"Step mismatch: expected {step}, got {step_key}. Last step: {last_step}")
     
+    async def _save_screenshot_and_log(self, step: int, observation: str = ""):
+        """保存截图并记录日志（异步）"""
+        try:
+            # 1. 先保存截图
+            screenshot_result = await self._save_step_screenshot(step)
+            
+            # 2. 更新步骤中的截图路径
+            if screenshot_result and self.task.steps and len(self.task.steps) > 0:
+                last_step = self.task.steps[-1]
+                last_step["screenshot"] = screenshot_result.get("medium")  # 使用medium作为默认
+                last_step["screenshot_ai"] = screenshot_result.get("ai")
+                last_step["screenshot_small"] = screenshot_result.get("small")
+                last_step["screenshot_original"] = screenshot_result.get("original")
+                logger.debug(f"Updated step {step} with screenshot paths")
+            
+            # 3. 记录到JSONL日志（现在screenshot_path应该有值了）
+            if self.task_logger and self.task.steps and len(self.task.steps) > 0:
+                last_step = self.task.steps[-1]
+                action_data = last_step.get("action", {})
+                if isinstance(action_data, str):
+                    try:
+                        action_data = json.loads(action_data)
+                    except:
+                        action_data = {"raw": action_data}
+                
+                self.task_logger.log_step(
+                    task_id=self.task.task_id,
+                    step=step,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                    thinking=last_step.get("thinking", ""),
+                    action=action_data,
+                    observation=observation,
+                    screenshot_path=last_step.get("screenshot"),  # 现在应该有值
+                    performance=last_step.get("performance"),
+                    tokens_used=last_step.get("tokens_used")
+                )
+                logger.debug(f"Logged step {step} to JSONL with screenshot_path")
+                
+        except Exception as e:
+            logger.error(f"Failed to save screenshot and log: {e}", exc_info=True)
+    
+    async def _save_screenshot_and_update_log(self, step: int):
+        """保存截图并更新JSONL日志（异步）"""
+        try:
+            # 1. 保存截图
+            screenshot_result = await self._save_step_screenshot(step)
+            
+            # 2. 更新步骤中的截图路径
+            if screenshot_result and self.task.steps and len(self.task.steps) > 0:
+                # 找到对应的步骤（步骤索引从1开始，数组索引从0开始）
+                step_idx = step - 1
+                if step_idx >= 0 and step_idx < len(self.task.steps):
+                    self.task.steps[step_idx]["screenshot"] = screenshot_result.get("medium")
+                    self.task.steps[step_idx]["screenshot_ai"] = screenshot_result.get("ai")
+                    self.task.steps[step_idx]["screenshot_small"] = screenshot_result.get("small")
+                    self.task.steps[step_idx]["screenshot_original"] = screenshot_result.get("original")
+                    logger.info(f"✅ Updated step {step} with screenshot paths: {screenshot_result.get('medium')}")
+                    
+                    # 3. 重新记录到JSONL（覆盖之前的记录）
+                    if self.task_logger:
+                        step_data = self.task.steps[step_idx]
+                        action_data = step_data.get("action", {})
+                        if isinstance(action_data, str):
+                            try:
+                                action_data = json.loads(action_data)
+                            except:
+                                action_data = {"raw": action_data}
+                        
+                        self.task_logger.log_step(
+                            task_id=self.task.task_id,
+                            step=step,
+                            timestamp=step_data.get("timestamp", datetime.now(timezone.utc).isoformat()),
+                            thinking=step_data.get("thinking", ""),
+                            action=action_data,
+                            observation=step_data.get("observation", ""),
+                            screenshot_path=screenshot_result.get("medium"),  # 现在有值了
+                            performance=step_data.get("performance"),
+                            tokens_used=step_data.get("tokens_used")
+                        )
+                        logger.info(f"✅ Re-logged step {step} to JSONL with screenshot_path")
+                        
+        except Exception as e:
+            logger.error(f"Failed to save screenshot and update log: {e}", exc_info=True)
+    
     async def _save_step_screenshot(self, step: int) -> Optional[Dict[str, str]]:
         """
-        保存步骤截图并压缩
+        保存步骤截图
+        
+        改进点：
+        1. 优先使用yadb截图（绕过FLAG_SECURE）
+        2. 多级压缩（ai/medium/small/thumbnail）
+        3. 兼容旧的screenshot字段
         
         Returns:
-            截图路径字典 {ai: path, medium: path, small: path}
+            截图路径字典 {ai, medium, small, thumbnail, original}
         """
         try:
-            # 确保截图目录存在
-            task_screenshot_dir = os.path.join(SCREENSHOT_DIR, self.task.task_id)
-            os.makedirs(task_screenshot_dir, exist_ok=True)
-            
-            # 获取截图
-            # 将 device_id 转换为 ADB 地址 (device_6100 -> localhost:6100)
+            # 获取截图（优先yadb）
             from server.utils import device_id_to_adb_address
-            device_id = self.task.device_id
-            adb_address = device_id_to_adb_address(device_id)
+            from phone_agent.adb import get_screenshot
             
-            screenshot = await asyncio.to_thread(get_screenshot, adb_address)
+            adb_address = device_id_to_adb_address(self.task.device_id)
+            # prefer_yadb=True 优先使用yadb，失败时回退到标准截图
+            screenshot = await asyncio.to_thread(
+                get_screenshot, 
+                adb_address,
+                prefer_yadb=True # 优先yadb
+            )
             
             if not screenshot or not screenshot.base64_data:
                 logger.warning(f"Failed to capture screenshot for step {step}")
                 return None
             
-            # 保存原始截图
-            import base64
-            original_path = os.path.join(task_screenshot_dir, f"step_{step:03d}_original.png")
-            with open(original_path, "wb") as f:
-                f.write(base64.b64decode(screenshot.base64_data))
+            # 从task.steps获取动作信息
+            step_data = None
+            if self.task.steps and len(self.task.steps) > 0:
+                for s in reversed(self.task.steps):
+                    if s.get("step") == step or s.get("step_index") == step:
+                        step_data = s
+                        break
             
-            # 压缩截图（生成多个级别）
-            compressed_paths = await asyncio.to_thread(
-                compress_screenshot,
-                original_path,
-                task_screenshot_dir,
-                for_ai=True
+            if not step_data:
+                logger.warning(f"Step data not found for step {step}")
+                return None
+            
+            # 确保 action 是字典格式
+            action_data = step_data.get("action", {})
+            if isinstance(action_data, str):
+                try:
+                    import json
+                    action_data = json.loads(action_data)
+                except Exception:
+                    # 如果解析失败，包装为字典
+                    action_data = {"raw": action_data}
+            
+            # 使用截图服务保存（含多级压缩）
+            metadata = await self.screenshot_service.save_step_screenshot(
+                task_id=self.task.task_id,
+                device_id=self.task.device_id,
+                step_number=step,
+                screenshot_base64=screenshot.base64_data,
+                action=action_data,
+                thinking=step_data.get("thinking", ""),
+                observation=step_data.get("observation", ""),
+                success=step_data.get("success", True),
+                kernel_mode=self.task.kernel_mode or "auto",
+                tokens_used=step_data.get("tokens_used")
             )
             
-            # 返回相对路径（便于前端访问）
-            result = {}
-            for level, path in compressed_paths.items():
-                if path:
-                    # 转换为相对于项目根目录的路径
-                    result[level] = path.replace("\\", "/")
+            # 构建完整的路径字典
+            from pathlib import Path
+            steps_dir = Path(f"data/screenshots/tasks/{self.task.task_id}/steps")
             
-            logger.info(f"Screenshot saved for step {step}: {len(result)} levels")
+            result = {
+                "original": metadata.original_path,
+                "ai": str((steps_dir / f"step_{step:03d}_ai.jpg").relative_to("data/screenshots")),
+                "medium": str((steps_dir / f"step_{step:03d}_medium.jpg").relative_to("data/screenshots")),
+                "small": str((steps_dir / f"step_{step:03d}_small.jpg").relative_to("data/screenshots")),
+                "thumbnail": metadata.thumbnail_path
+            }
+            
+            # 更新task.steps（兼容旧字段）
+            step_data["screenshot"] = result["medium"]  # 前端默认显示
+            step_data["screenshot_ai"] = result["ai"]  # AI使用
+            step_data["screenshot_small"] = result["small"]  # 列表预览
+            step_data["screenshot_original"] = result["original"]  # 原图
+            
+            logger.info(f"Screenshot saved with yadb={screenshot.forced}")
             return result
             
         except Exception as e:
-            logger.error(f"Failed to save screenshot for step {step}: {e}")
+            logger.error(f"Failed to save screenshot: {e}", exc_info=True)
             return None
     
     async def on_task_complete(self, success: bool, result: str):
@@ -374,10 +500,10 @@ class AgentService:
     管理 Agent 任务的生命周期
     
     架构设计（混合模式）:
-    - ✅ 运行中任务保留在内存（快速访问，频繁更新）
-    - ✅ 已完成任务立即持久化并移出内存（节省内存）
-    - ✅ 历史任务仅存储在数据库（无限容量）
-    - ✅ 查询支持双层（内存优先，数据库兜底）
+    - 运行中任务保留在内存（快速访问，频繁更新）
+    - 已完成任务立即持久化并移出内存（节省内存）
+    - 历史任务仅存储在数据库（无限容量）
+    - 查询支持双层（内存优先，数据库兜底）
     
     优势:
     - 内存占用减少95%（100个→5个运行中任务）
@@ -387,17 +513,33 @@ class AgentService:
     """
     
     def __init__(self):
-        # ✅ 仅保留运行中任务（预计5-10个）
+        # 仅保留运行中任务（预计5-10个）
         self.running_tasks: Dict[str, Task] = {}
         
         # asyncio.Task句柄管理（用于取消任务）
         self._running_task_handles: Dict[str, asyncio.Task] = {}
         
+        # Ask User 唤醒机制（Phase 1）
+        self._waiting_tasks_events: Dict[str, asyncio.Event] = {}  # 任务唤醒事件
+        self._waiting_tasks_answers: Dict[str, str] = {}  # 用户答案缓存
+        
         self._lock = asyncio.Lock()
-        self._websocket_broadcast_callback = None
         self.task_logger = TaskLogger(log_dir="logs")
         
-        logger.info("✅ AgentService initialized (Hybrid Mode: Memory for running, DB for completed)")
+        # WebSocket 广播回调（可选）
+        self._websocket_broadcast_callback: Optional[Callable] = None
+        
+        logger.info(" AgentService initialized (轮询模式：任务状态存储在内存和数据库)")
+    
+    def set_websocket_broadcast_callback(self, callback: Callable):
+        """
+        设置 WebSocket 广播回调
+        
+        Args:
+            callback: 异步回调函数，用于广播消息到 WebSocket 客户端
+        """
+        self._websocket_broadcast_callback = callback
+        logger.info(" WebSocket broadcast callback set for AgentService")
     
     async def create_task(
         self,
@@ -425,10 +567,23 @@ class AgentService:
             model_config=model_config
         )
         
-        # ✅ 立即持久化到数据库（异步）
+        # 立即持久化到数据库（异步）
         await self._persist_task_to_db(task)
         
-        # ✅ 添加到运行中任务（等待执行）
+        # 新增：初始化截图系统
+        try:
+            from server.services.screenshot_service import get_screenshot_service
+            screenshot_service = get_screenshot_service()
+            screenshot_service.init_task(
+                task_id=task_id,
+                device_id=device_id or "auto",
+                instruction=instruction,
+                model_config=model_config
+            )
+        except Exception as e:
+            logger.error(f"Failed to init screenshot system: {e}")
+        
+        # 添加到运行中任务（等待执行）
         async with self._lock:
             self.running_tasks[task_id] = task
         
@@ -443,7 +598,7 @@ class AgentService:
         except Exception as e:
             logger.error(f"Failed to log task start: {e}")
         
-        logger.info(f"✅ Task created: {task_id}, instruction: {instruction[:50]}...")
+        logger.info(f"Task created: {task_id}, instruction: {instruction[:50]}...")
         return task_id
     
     async def execute_task(
@@ -463,7 +618,7 @@ class AgentService:
         """
         import time
         start_time = time.time()
-        logger.info(f"⏱️  [Task {task_id}] Starting execute_task...")
+        logger.info(f"[Task {task_id}] Starting execute_task...")
         
         async with self._lock:
             task = self.running_tasks.get(task_id)
@@ -477,10 +632,10 @@ class AgentService:
             
             # 如果没有指定设备，从设备池获取
             if not task.device_id and device_pool:
-                logger.info(f"⏱️  [Task {task_id}] Getting available device...")
+                logger.info(f"[Task {task_id}] Getting available device...")
                 device_start = time.time()
                 device = await device_pool.get_available_device()
-                logger.info(f"⏱️  [Task {task_id}] Got device in {time.time() - device_start:.2f}s")
+                logger.info(f"[Task {task_id}] Got device in {time.time() - device_start:.2f}s")
                 if not device:
                     logger.error(f"No available device for task {task_id}")
                     return False
@@ -502,7 +657,7 @@ class AgentService:
         self._running_task_handles[task_id] = asyncio_task
         
         elapsed = time.time() - start_time
-        logger.info(f"⏱️  [Task {task_id}] Task launched in {elapsed:.2f}s on device {task.device_id}")
+        logger.info(f"[Task {task_id}] Task launched in {elapsed:.2f}s on device {task.device_id}")
         return True
     
     async def _run_agent(
@@ -519,14 +674,18 @@ class AgentService:
         """
         import time
         agent_start = time.time()
-        logger.info(f"⏱️  [Task {task.task_id}] _run_agent started...")
+        logger.info(f"[Task {task.task_id}] _run_agent started...")
         
         try:
-            # ✅ 获取当前事件循环并传给回调
+            # 获取当前事件循环并传给回调
             loop = asyncio.get_event_loop()
             
-            # 创建回调（传入事件循环）
-            callback = AgentCallback(task, self._websocket_broadcast_callback, loop)
+            # 创建回调（传递事件循环和TaskLogger）
+            callback = AgentCallback(
+                task=task,
+                loop=loop,
+                task_logger=self.task_logger
+            )
             
             # 获取设备的实际 ADB 地址（从V2扫描器）
             adb_device_id = None
@@ -538,7 +697,7 @@ class AgentService:
                     if task.device_id in scanned_devices:
                         v2_device = scanned_devices[task.device_id]
                         adb_device_id = v2_device.adb_address
-                        logger.info(f"⏱️  [Task {task.task_id}] Using device: {adb_device_id}")
+                        logger.info(f"[Task {task.task_id}] Using device: {adb_device_id}")
                     else:
                         logger.error(f"Task {task.task_id}: Device {task.device_id} not found in scanned devices")
                 except Exception as e:
@@ -547,12 +706,12 @@ class AgentService:
             # 构建模型配置
             model_config_dict = task.model_config or {}
             
-            # ✅ 检查任务是否已被取消
+            # 检查任务是否已被取消
             if task.status == TaskStatus.CANCELLED:
-                logger.warning(f"⚠️  Task {task.task_id} cancelled before preprocessing")
+                logger.warning(f"Task {task.task_id} cancelled before preprocessing")
                 return
             
-            # 🆕 Phase 1: 任务预处理
+            # Phase 1: 任务预处理
             from phone_agent.preprocessing import TaskPreprocessor, RuleEngineExecutor
             
             preprocessor = TaskPreprocessor()
@@ -562,53 +721,37 @@ class AgentService:
             )
             
             logger.info(
-                f"📋 [Task {task.task_id}] 预处理结果: {execution_plan.task_type.value} → "
+                f"[Task {task.task_id}] 预处理结果: {execution_plan.task_type.value} → "
                 f"{execution_plan.executor.value} (置信度: {execution_plan.confidence:.2f})"
             )
             
-            # 🆕 如果可以直接执行（高置信度的纯系统指令，且非复合任务）
+            # 如果可以直接执行（高置信度的纯系统指令，且非复合任务）
             if (execution_plan.direct_action and 
-                execution_plan.skip_llm and  # 🆕 只有skip_llm=True才完全跳过
+                execution_plan.skip_llm and # 只有skip_llm=True才完全跳过
                 execution_plan.confidence >= 0.9 and 
                 adb_device_id):
                 
-                logger.info(f"🚀 [Task {task.task_id}] 规则引擎直接执行: {execution_plan.direct_action}")
-                
+                logger.info(f" [Task {task.task_id}] 规则引擎直接执行: {execution_plan.direct_action}")
                 rule_executor = RuleEngineExecutor(adb_device_id)
                 success, message = rule_executor.execute(execution_plan.direct_action)
                 
                 if success:
-                    # ✅ 记录步骤并广播（规则引擎直接执行）
+                    # 记录步骤并广播（规则引擎直接执行）
                     step_timestamp = datetime.now(timezone.utc).isoformat()
                     task.steps.append({
                         "step": 0,
+                        "step_type": "preprocessing",  # 🔥 标记为预处理步骤
                         "timestamp": step_timestamp,
                         "thinking": f"规则引擎识别为纯系统指令，直接执行",
                         "action": execution_plan.direct_action,
                         "observation": message,
                         "duration_ms": int((datetime.now(timezone.utc) - task.started_at).total_seconds() * 1000),
                         "success": True,
-                        "status": "completed"
+                        "status": "completed",
+                        "screenshot": None  # 预处理步骤无截图
                     })
                     
-                    # ✅ WebSocket 广播步骤更新
-                    if self._websocket_broadcast_callback:
-                        try:
-                            await self._websocket_broadcast_callback({
-                                "type": "task_step_update",
-                                "data": {
-                                    "task_id": task.task_id,
-                                    "step": 0,
-                                    "thinking": f"规则引擎识别为纯系统指令，直接执行",
-                                    "action": execution_plan.direct_action,
-                                    "observation": message,
-                                    "success": True,
-                                    "status": "completed",
-                                    "timestamp": step_timestamp
-                                }
-                            })
-                        except Exception as e:
-                            logger.error(f"Failed to broadcast step update: {e}")
+                    # 步骤已记录到 task.steps，前端通过轮询获取
                     
                     # 直接执行成功
                     task.status = TaskStatus.COMPLETED
@@ -622,20 +765,20 @@ class AgentService:
                         "duration": task.duration
                     }
                     
-                    # 保存结果
-                    self._save_task_result(task)
+                    # 保存结果到数据库
+                    await self._persist_task_to_db(task)
                     
-                    # ✅ 新增: 清理内存
+                    # 新增: 清理内存
                     await self._cleanup_completed_task(task.task_id)
                     
                     # 输出统计
                     stats = preprocessor.get_stats()
                     logger.info(
-                        f"✅ [Task {task.task_id}] 规则引擎直接执行完成 "
+                        f"[Task {task.task_id}] 规则引擎直接执行完成 "
                         f"(耗时: {task.duration:.2f}s)"
                     )
                     logger.info(
-                        f"📊 预处理统计: 总任务={stats['total']}, "
+                        f"预处理统计: 总任务={stats['total']}, "
                         f"直接执行={stats['direct_execution']} ({stats['direct_execution_percentage']})"
                     )
                     
@@ -643,66 +786,51 @@ class AgentService:
                 else:
                     # 直接执行失败，降级到正常流程
                     logger.warning(
-                        f"⚠️  [Task {task.task_id}] 规则引擎执行失败: {message}, "
+                        f"[Task {task.task_id}] 规则引擎执行失败: {message}, "
                         f"降级到 {execution_plan.fallback.value}"
                     )
                     # 继续走正常流程
             
-            # ✅ 再次检查任务是否已被取消
+            # 再次检查任务是否已被取消
             if task.status == TaskStatus.CANCELLED:
-                logger.warning(f"⚠️  Task {task.task_id} cancelled before compound task execution")
+                logger.warning(f"Task {task.task_id} cancelled before compound task execution")
                 return
             
-            # 🆕 复合任务处理：先执行系统命令部分，再继续LLM流程
+            # 复合任务处理：先执行系统命令部分，再继续LLM流程
             elif (execution_plan.direct_action and 
                   not execution_plan.skip_llm and  # 复合任务
                   execution_plan.confidence >= 0.85 and 
                   adb_device_id):
                 
-                logger.info(f"🚀 [Task {task.task_id}] 复合任务：先执行系统命令 {execution_plan.direct_action}")
-                
+                logger.info(f"[Task {task.task_id}] 复合任务：先执行系统命令 {execution_plan.direct_action}")
                 rule_executor = RuleEngineExecutor(adb_device_id)
                 success, message = rule_executor.execute(execution_plan.direct_action)
                 
-                # ✅ 记录步骤并广播（复合任务的系统命令部分）
+                # 记录步骤并广播（复合任务的系统命令部分）
                 step_timestamp = datetime.now(timezone.utc).isoformat()
                 task.steps.append({
                     "step": 0,
+                    "step_type": "preprocessing",  # 🔥 标记为预处理步骤
                     "timestamp": step_timestamp,
                     "thinking": f"复合任务：先执行系统命令部分",
                     "action": execution_plan.direct_action,
                     "observation": message,
                     "duration_ms": int((datetime.now(timezone.utc) - task.started_at).total_seconds() * 1000),
                     "success": success,
-                    "status": "completed" if success else "failed"
+                    "status": "completed" if success else "failed",
+                    "screenshot": None  # 预处理步骤无截图
                 })
                 
-                # ✅ WebSocket 广播步骤更新
-                if self._websocket_broadcast_callback:
-                    try:
-                        await self._websocket_broadcast_callback({
-                            "type": "task_step_update",
-                            "data": {
-                                "task_id": task.task_id,
-                                "step": 0,
-                                "thinking": f"复合任务：先执行系统命令部分",
-                                "action": execution_plan.direct_action,
-                                "observation": message,
-                                "success": success,
-                                "status": "completed" if success else "failed",
-                                "timestamp": step_timestamp
-                            }
-                        })
-                    except Exception as e:
-                        logger.error(f"Failed to broadcast step update: {e}")
+                # WebSocket 广播步骤更新
+                # 步骤已记录到 task.steps，前端通过轮询获取
                 
                 if success:
-                    logger.info(f"✅ [Task {task.task_id}] 系统命令执行成功，继续LLM流程处理后续任务")
+                    logger.info(f"[Task {task.task_id}] 系统命令执行成功，继续LLM流程处理后续任务")
                     # 等待应用启动
                     import time
                     time.sleep(2)
                 else:
-                    logger.warning(f"⚠️  [Task {task.task_id}] 系统命令执行失败: {message}")
+                    logger.warning(f"[Task {task.task_id}] 系统命令执行失败: {message}")
                 # 继续执行LLM流程（无论成败）
             
             # 从字典中提取 ModelConfig 支持的参数
@@ -734,7 +862,7 @@ class AgentService:
             if "model_name" in model_config_dict:
                 model_params["model_name"] = model_config_dict["model_name"]
             else:
-                # 🆕 使用模型选择器根据内核模式动态选择模型
+                # 使用模型选择器根据内核模式动态选择模型
                 kernel_mode = model_config_dict.get("kernel_mode", "auto")
                 
                 from phone_agent.model.selector import select_model_for_kernel
@@ -749,16 +877,16 @@ class AgentService:
             if "temperature" in model_config_dict:
                 model_params["temperature"] = model_config_dict["temperature"]
             
-            # 🔒 脱敏日志：不直接打印可能包含API密钥的配置
+            # 脱敏日志：不直接打印可能包含API密钥的配置
             logger.info(f"Model config: {model_params['model_name']} @ {model_params['base_url']}")
             
             # 创建 ModelConfig 对象
             model_config = ModelConfig(**model_params)
             
-            # ✅ 记录实际使用的模型名称和内核模式到Task对象（用于统计）
+            # 记录实际使用的模型名称和内核模式到Task对象（用于统计）
             task.model_name = model_params["model_name"]
-            # ⚠️ 已废弃XML/混合内核，统一使用vision
-            task.kernel_mode = "vision"  # 强制设置为vision，不再使用auto/xml
+            # 支持多种内核模式：xml（快速）、vision（兜底）、auto（智能切换）
+            task.kernel_mode = model_config_dict.get("kernel_mode", "auto")
             
             # 构建 Agent 配置
             agent_config = AgentConfig(
@@ -769,12 +897,12 @@ class AgentService:
             
             # 获取内核模式
             kernel_mode = model_config_dict.get("kernel_mode", "auto")
-            logger.info(f"⏱️  [Task {task.task_id}] Kernel mode: {kernel_mode}")
+            logger.info(f"[Task {task.task_id}] Kernel mode: {kernel_mode}")
             
-            # ⚠️ 已废弃：XML和混合内核（稳定性差，已移除）
-            # 现在统一使用Vision内核（PhoneAgent）
-            if False:  # kernel_mode in ["xml", "auto"]:
-                # 🗑️ 废弃：使用混合智能体（支持XML和Vision）
+            # 混合内核架构：支持 XML（快速）、Vision（兜底）、Auto（智能切换）
+            # XML 优先，失败时自动降级到 Vision
+            if kernel_mode in ["xml", "auto"]:
+                # 使用混合智能体（支持XML和Vision自动切换）
                 from phone_agent.kernel import HybridAgent, HybridConfig, ExecutionMode
                 
                 # 映射内核模式
@@ -785,7 +913,7 @@ class AgentService:
                 }
                 execution_mode = mode_map.get(kernel_mode, ExecutionMode.AUTO)
                 
-                logger.info(f"⏱️  [Task {task.task_id}] Creating HybridAgent with mode {execution_mode.value}...")
+                logger.info(f"[Task {task.task_id}] Creating HybridAgent with mode {execution_mode.value}...")
                 
                 hybrid_config = HybridConfig(
                     mode=execution_mode,
@@ -794,35 +922,37 @@ class AgentService:
                     verbose=True
                 )
                 
-                # 创建异步回调
-                async_callback = AgentCallback(
+                # 创建回调（传递事件循环和TaskLogger）
+                loop = asyncio.get_event_loop()
+                callback = AgentCallback(
                     task=task,
-                    websocket_broadcast_callback=self._websocket_broadcast_callback
+                    loop=loop,
+                    task_logger=self.task_logger
                 )
                 
-                # 🆕 使用同步适配器包装异步回调（传递事件循环以支持实时广播）
+                # 使用同步适配器包装回调（传递事件循环以支持实时广播）
                 from phone_agent.kernel import AsyncStepCallback
                 loop = asyncio.get_event_loop()
-                sync_callback = AsyncStepCallback(async_callback, loop=loop)
+                sync_callback = AsyncStepCallback(callback, loop=loop)
                 
                 agent = HybridAgent(
                     model_config=model_config,
                     config=hybrid_config,
-                    step_callback=sync_callback  # 🆕 传递同步适配器
+                    step_callback=sync_callback # 传递同步适配器
                 )
                 
-                # ✅ 再次检查任务是否已被取消（Agent执行前的最后一次检查）
+                # 再次检查任务是否已被取消（Agent执行前的最后一次检查）
                 if task.status == TaskStatus.CANCELLED:
-                    logger.warning(f"⚠️  Task {task.task_id} cancelled before agent.run()")
+                    logger.warning(f"Task {task.task_id} cancelled before agent.run()")
                     return
                 
-                logger.info(f"⏱️  [Task {task.task_id}] Running HybridAgent...")
+                logger.info(f"[Task {task.task_id}] Running HybridAgent...")
                 
-                # ✅ 使用可取消的包装器运行agent
+                # 使用可取消的包装器运行agent
                 try:
                     result = await loop.run_in_executor(None, agent.run, task.instruction)
                 except asyncio.CancelledError:
-                    logger.warning(f"⚠️  Task {task.task_id} was cancelled during execution")
+                    logger.warning(f"Task {task.task_id} was cancelled during execution")
                     task.status = TaskStatus.CANCELLED
                     task.error = "Task cancelled by user"
                     task.completed_at = datetime.now(timezone.utc)
@@ -830,11 +960,15 @@ class AgentService:
                 
                 # 检查是否在执行期间被取消
                 if task.status == TaskStatus.CANCELLED:
-                    logger.warning(f"⚠️  Task {task.task_id} was cancelled")
+                    logger.warning(f"Task {task.task_id} was cancelled")
                     return
                 
-                # 🆕 实时广播版本不需要flush（已在每步自动广播）
-                logger.debug(f"✅ [Task {task.task_id}] All steps broadcasted in real-time")
+                # 步骤已记录到 task.steps，前端通过轮询获取
+                logger.debug(f"[Task {task.task_id}] All steps recorded in task.steps")
+                # 提取token统计（XML内核会返回）
+                task.total_tokens = result.get("total_tokens", 0)
+                task.total_prompt_tokens = result.get("prompt_tokens", 0)
+                task.total_completion_tokens = result.get("completion_tokens", 0)
                 
                 # 处理结果
                 task.result = result.get("message", "任务完成")
@@ -842,70 +976,63 @@ class AgentService:
                 task.completed_at = datetime.now(timezone.utc)
                 # duration 是自动计算的 @property，不需要赋值
                 
-                # ✅ 广播任务完成状态
-                if self._websocket_broadcast_callback:
-                    try:
-                        await self._websocket_broadcast_callback({
-                            "type": "task_status_change",
-                            "data": {
-                                "task_id": task.task_id,
-                                "status": task.status.value,
-                                "message": task.result,
-                                "timestamp": task.completed_at.isoformat(),
-                                "duration": task.duration
-                            }
-                        })
-                        logger.info(f"✅ Broadcasted task completion: {task.task_id}")
-                    except Exception as e:
-                        logger.error(f"Failed to broadcast task completion: {e}")
+                # 任务状态已更新，前端通过轮询获取
+                logger.info(f"Task completion recorded: {task.task_id}")
+                # 记录任务完成到JSONL（补充XML内核缺失的任务级日志）
+                try:
+                    self.task_logger.log_task_complete(
+                        task_id=task.task_id,
+                        status="success" if result.get("success") else "failed",
+                        result_message=task.result,
+                        total_steps=result.get("steps", 0),
+                        total_time=(datetime.now(timezone.utc) - task.started_at).total_seconds() if task.started_at else 0,
+                        total_tokens=task.total_tokens
+                    )
+                    logger.info(f"Task completion logged to JSONL: {task.task_id}")
+                except Exception as e:
+                    logger.error(f"Failed to log task completion: {e}")
                 
-                # 记录步骤信息（简化版）
-                task.steps.append({
-                    "step": 0,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "thinking": f"使用{result.get('mode', 'unknown')}模式执行",
-                    "action": {"action": "complete", "message": task.result},
-                    "success": result.get("success"),
-                    "cost_estimate": result.get("cost_estimate", 0)
-                })
+                # 不再添加简化步骤（XML内核已通过回调记录详细步骤）
                 
-                logger.info(f"✅ [Task {task.task_id}] HybridAgent completed: {task.result}")
-                
+                logger.info(f"[Task {task.task_id}] HybridAgent completed: {task.result}")
             else:
                 # 使用传统Vision Agent
-                logger.info(f"⏱️  [Task {task.task_id}] Creating PhoneAgent (Vision mode)...")
+                logger.info(f"[Task {task.task_id}] Creating PhoneAgent (Vision mode)...")
                 
-                # 创建异步回调
-                loop = asyncio.get_event_loop()  # ✅ 先获取事件循环
-                async_callback = AgentCallback(
+                # 创建回调（传递事件循环和TaskLogger）
+                loop = asyncio.get_event_loop() # 先获取事件循环
+                callback = AgentCallback(
                     task=task,
-                    websocket_broadcast_callback=self._websocket_broadcast_callback,
-                    loop=loop  # ✅ 传递事件循环，确保回调能正确广播
+                    loop=loop,
+                    task_logger=self.task_logger
                 )
                 
-                # 🆕 使用同步适配器包装异步回调（传递事件循环以支持实时广播）
+                # 使用同步适配器包装回调（传递事件循环以支持实时广播）
                 from phone_agent.kernel import AsyncStepCallback
-                sync_callback = AsyncStepCallback(async_callback, loop=loop)
+                sync_callback = AsyncStepCallback(callback, loop=loop)
                 
                 agent = PhoneAgent(
                     model_config=model_config,
                     agent_config=agent_config,
-                    step_callback=sync_callback  # 🆕 传递回调
+                    step_callback=sync_callback # 传递回调
                 )
                 
-                logger.info(f"⏱️  [Task {task.task_id}] Starting agent step-by-step execution...")
+                logger.info(f"[Task {task.task_id}] Starting agent step-by-step execution...")
                 agent_run_start = time.time()
                 
                 # 逐步执行Agent，记录每步的token消耗和耗时
                 loop = asyncio.get_event_loop()
-                step_index = 0
+                # 🔥 修复：从现有步骤数开始，避免与预处理步骤冲突
+                step_index = len(task.steps)  # 如果有预处理步骤，从1开始；否则从0开始
+                if step_index > 0:
+                    logger.info(f"[Task {task.task_id}] Continuing from step {step_index} (after {step_index} preprocessing step(s))")
                 is_first = True
                 result_message = None
                 
                 while step_index < agent_config.max_steps:
-                    # ✅ 检查任务是否被取消
+                    # 检查任务是否被取消
                     if task.status == TaskStatus.CANCELLED:
-                        logger.warning(f"⚠️  Task {task.task_id} cancelled, stopping execution")
+                        logger.warning(f"Task {task.task_id} cancelled, stopping execution")
                         result_message = "Task cancelled by user"
                         break
                     
@@ -927,7 +1054,7 @@ class AgentService:
                         task.total_completion_tokens += step_result.usage.get("completion_tokens", 0)
                         task.total_tokens += step_result.usage.get("total_tokens", 0)
                         
-                        # ✅ 新增: 记录模型调用统计（异步，不阻塞）
+                        # 新增: 记录模型调用统计（异步，不阻塞）
                         try:
                             await track_model_call(
                                 task_id=task.task_id,
@@ -938,47 +1065,16 @@ class AgentService:
                                 success=step_result.success
                             )
                         except Exception as e:
-                            logger.error(f"❌ Failed to track model call: {e}")
-                    
-                    # 记录步骤详情（使用step而不是step_index，保持一致性）
-                    step_timestamp = datetime.now(timezone.utc).isoformat()
-                    task.steps.append({
-                        "step": step_index,
-                        "timestamp": step_timestamp,
-                        "thinking": step_result.thinking,
-                        "action": step_result.action,
-                        "duration_ms": duration_ms,
-                        "tokens_used": step_result.usage,
-                        "success": step_result.success,
-                        "status": "running"  # 初始状态
-                    })
-                    
-                    # ✅ 立即广播步骤开始状态（包含 thinking 和 action）
-                    if self._websocket_broadcast_callback:
-                        try:
-                            await self._websocket_broadcast_callback({
-                                "type": "task_step_update",
-                                "data": {
-                                    "task_id": task.task_id,
-                                    "step": step_index,
-                                    "thinking": step_result.thinking,
-                                    "action": step_result.action,
-                                    "success": step_result.success,
-                                    "status": "running",  # 初始状态
-                                    "timestamp": step_timestamp,
-                                    "duration_ms": duration_ms,
-                                    "tokens_used": step_result.usage
-                                }
-                            })
-                            logger.info(f"✅ [WebSocket] Broadcasted step start: task_id={task.task_id}, step={step_index}")
-                        except Exception as e:
-                            logger.error(f"❌ [WebSocket] Failed to broadcast step start: {e}", exc_info=True)
-                    
-                    logger.info(f"⏱️  [Task {task.task_id}] Step {step_index}: {duration_ms}ms, tokens: {step_result.usage}")
+                            logger.error(f"Failed to track model call: {e}")
+                        
+                        # 步骤记录和广播已由 AgentCallback 处理，不需要重复记录
+                        # AgentCallback.on_step_start() 和 on_step_complete() 会自动处理
+                        logger.debug(f"Step {step_index} completed, callback handled recording")
+                        logger.info(f"[Task {task.task_id}] Step {step_index}: {duration_ms}ms, tokens: {step_result.usage}")
                     
                     # 保存截图并更新步骤状态为 completed
-                    # ✅ on_step_complete 是同步方法，不需要 await
-                    async_callback.on_step_complete(
+                    # on_step_complete 是同步方法，不需要 await
+                    callback.on_step_complete(
                         step_index, 
                         step_result.success, 
                         step_result.thinking, 
@@ -1004,7 +1100,8 @@ class AgentService:
                                 "step_duration": duration_ms / 1000,
                                 "inference_time": duration_ms / 1000  # 可以更精确计算
                             },
-                            tokens_used=step_result.usage
+                            tokens_used=step_result.usage,
+                            success=step_result.success
                         )
                     except Exception as e:
                         logger.error(f"Failed to log step: {e}")
@@ -1019,35 +1116,20 @@ class AgentService:
                 if result_message is None:
                     result_message = "Max steps reached"
                 
-                logger.info(f"⏱️  [Task {task.task_id}] Agent execution completed in {time.time() - agent_run_start:.2f}s")
-                logger.info(f"📊 [Task {task.task_id}] Total tokens: {task.total_tokens} (prompt: {task.total_prompt_tokens}, completion: {task.total_completion_tokens})")
+                logger.info(f"[Task {task.task_id}] Agent execution completed in {time.time() - agent_run_start:.2f}s")
+                logger.info(f"[Task {task.task_id}] Total tokens: {task.total_tokens} (prompt: {task.total_prompt_tokens}, completion: {task.total_completion_tokens})")
                 
                 # 完成回调（同步方法）
-                # ✅ on_task_complete 需要改为异步调用或直接处理状态
+                # on_task_complete 需要改为异步调用或直接处理状态
                 # 直接更新任务状态和广播
                 task.status = TaskStatus.COMPLETED
                 task.result = result_message
                 task.completed_at = datetime.now(timezone.utc)
                 # duration 是自动计算的 @property，不需要赋值
                 
-                # 广播任务完成状态
-                if self._websocket_broadcast_callback:
-                    try:
-                        await self._websocket_broadcast_callback({
-                            "type": "task_status_change",
-                            "data": {
-                                "task_id": task.task_id,
-                                "status": TaskStatus.COMPLETED.value,
-                                "message": result_message,
-                                "timestamp": task.completed_at.isoformat(),
-                                "duration": task.duration
-                            }
-                        })
-                        logger.info(f"✅ [WebSocket] Broadcasted task status change: task_id={task.task_id}, status=COMPLETED")
-                    except Exception as e:
-                        logger.error(f"❌ [WebSocket] Failed to broadcast task completion: {e}", exc_info=True)
-                
-                logger.info(f"✅ Task {task.task_id} completed successfully (Vision mode)")
+                # 任务状态已更新，前端通过轮询获取
+                logger.info(f"Task status recorded: task_id={task.task_id}, status=COMPLETED")
+                logger.info(f"Task {task.task_id} completed successfully (Vision mode)")
                 
                 # 新增: 工程化日志 - 记录任务完成
                 try:
@@ -1059,34 +1141,28 @@ class AgentService:
                         total_time=time.time() - agent_start,
                         total_tokens=task.total_tokens
                     )
-                    logger.info(f"✅ Task completion logged to JSONL: {task.task_id}")
+                    logger.info(f"Task completion logged to JSONL: {task.task_id}")
                 except Exception as e:
                     logger.error(f"Failed to log task completion: {e}")
             
         except Exception as e:
-            logger.error(f"Task {task.task_id} failed: {e}", exc_info=True)
+            # 增强错误日志：记录完整的错误信息和上下文
+            error_type = type(e).__name__
+            error_msg = str(e)
+            logger.error(f"Task {task.task_id} failed with {error_type}: {error_msg}", exc_info=True)
+            logger.error(f"Task instruction: {task.instruction[:100]}...")
+            logger.error(f"Device: {task.device_id}")
+            logger.error(f"Kernel mode: {task.kernel_mode}")
+            logger.error(f"Steps completed: {len(task.steps)}")
             
-            # ✅ 直接更新任务状态（不使用 callback.on_error，它是同步方法）
+            # 直接更新任务状态（不使用 callback.on_error，它是同步方法）
             task.status = TaskStatus.FAILED
-            task.error = str(e)
+            task.error = f"{error_type}: {error_msg}"
             task.completed_at = datetime.now(timezone.utc)
             # duration 是自动计算的 @property，不需要赋值
             
-            # 广播任务失败状态
-            if self._websocket_broadcast_callback:
-                try:
-                    await self._websocket_broadcast_callback({
-                        "type": "task_status_change",
-                        "data": {
-                            "task_id": task.task_id,
-                            "status": TaskStatus.FAILED.value,
-                            "error": str(e),
-                            "timestamp": task.completed_at.isoformat(),
-                            "duration": task.duration
-                        }
-                    })
-                except Exception as broadcast_error:
-                    logger.error(f"Failed to broadcast task failure: {broadcast_error}")
+            # 任务失败状态已记录，前端通过轮询获取
+            logger.info(f"Task failure recorded: task_id={task.task_id}, error={error_type}: {error_msg}")
             
             # 新增: 工程化日志 - 记录任务失败
             try:
@@ -1112,7 +1188,7 @@ class AgentService:
                         status=task.status.value,
                         started_at=task.started_at,
                         completed_at=task.completed_at,
-                        result=task.result,
+                        result=json.dumps(task.result, ensure_ascii=False) if task.result else None,
                         error=task.error,
                         steps_count=len(task.steps),
                         steps_detail=json.dumps(task.steps, ensure_ascii=False),
@@ -1120,14 +1196,32 @@ class AgentService:
                         total_prompt_tokens=task.total_prompt_tokens,
                         total_completion_tokens=task.total_completion_tokens
                     )
-                    logger.info(f"✅ Task result persisted: {task.task_id}")
+                    logger.info(f"Task result persisted: {task.task_id}")
                 finally:
                     db.close()
             except Exception as e:
                 logger.error(f"Failed to persist task result: {e}")
             
+            # 新增：完成截图系统任务
+            if task.status in (TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED):
+                try:
+                    from server.services.screenshot_service import get_screenshot_service
+                    screenshot_service = get_screenshot_service()
+                    screenshot_service.complete_task(
+                        task_id=task.task_id,
+                        status=task.status.value,
+                        result=task.result if isinstance(task.result, str) else json.dumps(task.result, ensure_ascii=False) if task.result else None,
+                        error=task.error,
+                        total_tokens=task.total_tokens,
+                        total_prompt_tokens=task.total_prompt_tokens,
+                        total_completion_tokens=task.total_completion_tokens
+                    )
+                    logger.info(f"Screenshot system task completed: {task.task_id}")
+                except Exception as e:
+                    logger.error(f"Failed to complete screenshot task: {e}")
+            
             # 清理
-            # ✅ 新增: 清理已完成任务（移出内存）
+            # 新增: 清理已完成任务（移出内存）
             if task.status in (TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED):
                 await self._cleanup_completed_task(task.task_id)
             else:
@@ -1154,12 +1248,12 @@ class AgentService:
         """
         task = self.running_tasks.get(task_id)
         if not task:
-            logger.error(f"❌ Task not found: {task_id}")
+            logger.error(f"Task not found: {task_id}")
             return False
         
         # 允许取消 PENDING 或 RUNNING 状态的任务
         if task.status not in [TaskStatus.PENDING, TaskStatus.RUNNING]:
-            logger.error(f"❌ Task {task_id} cannot be cancelled (status: {task.status})")
+            logger.error(f"Task {task_id} cannot be cancelled (status: {task.status})")
             return False
         
         async with self._lock:
@@ -1167,12 +1261,12 @@ class AgentService:
             task.status = TaskStatus.CANCELLED
             task.completed_at = datetime.now(timezone.utc)
             task.error = "Task cancelled by user"
-            logger.warning(f"⚠️  Task {task_id} marked as cancelled")
+            logger.warning(f"Task {task_id} marked as cancelled")
             
-            # ✅ 持久化到数据库（关键修复：确保取消的任务被保存）
+            # 持久化到数据库（关键修复：确保取消的任务被保存）
             try:
                 await self._persist_task_to_db(task)
-                logger.info(f"✅ Task {task_id} persisted to database after cancellation")
+                logger.info(f"Task {task_id} persisted to database after cancellation")
             except Exception as e:
                 logger.error(f"Failed to persist cancelled task to database: {e}")
             
@@ -1180,35 +1274,20 @@ class AgentService:
             if task_id in self._running_task_handles:
                 try:
                     self._running_task_handles[task_id].cancel()
-                    logger.info(f"✅ Cancelled async task: {task_id}")
+                    logger.info(f"Cancelled async task: {task_id}")
                 except Exception as e:
                     logger.error(f"Failed to cancel async task {task_id}: {e}")
             
-            # ✅ 从运行中任务列表移除（让任务进入历史记录）
+            # 从运行中任务列表移除（让任务进入历史记录）
             if task_id in self.running_tasks:
                 self.running_tasks.pop(task_id)
-                logger.info(f"✅ Removed task {task_id} from running tasks")
+                logger.info(f" Removed task {task_id} from running tasks")
         
-        # 广播任务取消事件
-        if self._websocket_broadcast_callback:
-            try:
-                await self._websocket_broadcast_callback({
-                    "type": "task_cancelled",
-                    "data": {
-                        "task_id": task_id,
-                        "status": "cancelled",
-                        "timestamp": datetime.now(timezone.utc).isoformat()
-                    }
-                })
-            except Exception as e:
-                logger.error(f"Failed to broadcast task cancellation: {e}")
+        # 任务取消状态已记录，前端通过轮询获取
+        logger.info(f"Task cancellation recorded: task_id={task_id}")
         
         return True
     
-    def set_websocket_broadcast_callback(self, callback):
-        """设置WebSocket广播回调"""
-        self._websocket_broadcast_callback = callback
-        logger.info(f"✅ WebSocket broadcast callback set: {callback}")
     
     def get_task(self, task_id: str) -> Optional[Task]:
         """
@@ -1220,7 +1299,7 @@ class AgentService:
         Returns:
             任务对象
         """
-        # ✅ 仅查询运行中任务（内存）
+        # 仅查询运行中任务（内存）
         return self.running_tasks.get(task_id)
     
     async def get_task_async(self, task_id: str) -> Optional[Task]:
@@ -1233,11 +1312,11 @@ class AgentService:
         Returns:
             任务对象
         """
-        # ✅ Layer 1: 查询运行中任务（内存，快速）
+        # Layer 1: 查询运行中任务（内存，快速）
         if task_id in self.running_tasks:
             return self.running_tasks[task_id]
         
-        # ✅ Layer 2: 查询数据库（历史任务）
+        # Layer 2: 查询数据库（历史任务）
         return await self._get_task_from_db(task_id)
     
     def list_tasks(
@@ -1284,7 +1363,7 @@ class AgentService:
         Returns:
             任务列表
         """
-        # ✅ 直接从数据库查询（包含所有历史任务）
+        # 直接从数据库查询（包含所有历史任务）
         return await self._list_tasks_from_db(status, limit, offset)
     
     def get_stats(self) -> Dict[str, Any]:
@@ -1323,7 +1402,7 @@ class AgentService:
                     "cancelled": cancelled,
                     "success_rate": (completed / (completed + failed) * 100) if (completed + failed) > 0 else 0,
                     "avg_duration": avg_duration,
-                    "memory_tasks": len(self.running_tasks)  # ✅ 新增: 内存中任务数
+                    "memory_tasks": len(self.running_tasks) # 新增: 内存中任务数
                 }
             finally:
                 db.close()
@@ -1339,30 +1418,32 @@ class AgentService:
             try:
                 existing = crud.get_task(db, task.task_id)
                 if existing:
-                    logger.info(f"💾 Updating task in database: {task.task_id}, status={task.status.value}, steps={len(task.steps)}")
+                    logger.info(f"Updating task in database: {task.task_id}, status={task.status.value}, steps={len(task.steps)}")
                     crud.update_task(
                         db, task.task_id,
                         status=task.status.value,
                         started_at=task.started_at,
                         completed_at=task.completed_at,
-                        result=task.result,
+                        result=json.dumps(task.result, ensure_ascii=False) if task.result else None,
                         error=task.error,
                         steps_count=len(task.steps),
                         steps_detail=json.dumps(task.steps, ensure_ascii=False),
                         total_tokens=task.total_tokens,
                         total_prompt_tokens=task.total_prompt_tokens,
-                        total_completion_tokens=task.total_completion_tokens
+                        total_completion_tokens=task.total_completion_tokens,
+                        important_content=json.dumps(task.important_content, ensure_ascii=False) if task.important_content else None,
+                        todos=task.todos
                     )
-                    logger.info(f"✅ Task updated successfully in database: {task.task_id}")
+                    logger.info(f"Task updated successfully in database: {task.task_id}")
                 else:
-                    logger.info(f"💾 Creating new task in database: {task.task_id}, instruction={task.instruction[:50]}...")
+                    logger.info(f"Creating new task in database: {task.task_id}, instruction={task.instruction[:50]}...")
                     crud.create_task(
                         db, task_id=task.task_id, instruction=task.instruction,
                         device_id=task.device_id, model_config=task.model_config
                     )
-                    logger.info(f"✅ Task created successfully in database: {task.task_id}")
+                    logger.info(f"Task created successfully in database: {task.task_id}")
             except Exception as e:
-                logger.error(f"❌ Failed to persist task {task.task_id} to database: {e}", exc_info=True)
+                logger.error(f"Failed to persist task {task.task_id} to database: {e}", exc_info=True)
                 raise
             finally:
                 db.close()
@@ -1442,7 +1523,7 @@ class AgentService:
         return await asyncio.get_event_loop().run_in_executor(None, _list)
     
     async def _cleanup_completed_task(self, task_id: str):
-        """✅ 清理已完成任务（移出内存）"""
+        """清理已完成任务（移出内存）"""
         async with self._lock:
             task = self.running_tasks.get(task_id)
             if not task:
@@ -1458,7 +1539,118 @@ class AgentService:
             if task_id in self._running_task_handles:
                 del self._running_task_handles[task_id]
             
-            logger.info(f"🗑️ Task {task_id} completed and removed from memory (status: {task.status.value})")
+            # 4. 清理 Ask User 相关资源
+            if task_id in self._waiting_tasks_events:
+                del self._waiting_tasks_events[task_id]
+            if task_id in self._waiting_tasks_answers:
+                del self._waiting_tasks_answers[task_id]
+            
+        logger.info(f"🗑️ Task {task_id} completed and removed from memory (status: {task.status.value})")
+    
+    async def wake_up_waiting_task(self, task_id: str, answer: str):
+        """
+        唤醒等待用户答案的任务（Phase 1）
+        
+        当用户提交答案后，通过此方法唤醒阻塞的 Agent
+        
+        Args:
+            task_id: 任务ID
+            answer: 用户的回答
+        """
+        async with self._lock:
+            # 保存用户答案
+            self._waiting_tasks_answers[task_id] = answer
+            
+            # 触发唤醒事件
+            if task_id in self._waiting_tasks_events:
+                self._waiting_tasks_events[task_id].set()
+                logger.info(f"Woke up waiting task {task_id} with answer: {answer[:50]}...")
+            else:
+                logger.warning(f"No waiting event found for task {task_id}, answer saved to cache")
+    
+    async def wait_for_user_answer(self, task_id: str, question: Dict[str, Any], timeout: float = 300.0) -> Optional[str]:
+        """
+        等待用户回答（Phase 1）
+        Agent 调用此方法后会阻塞，直到用户通过 API 提交答案
+        
+        Args:
+            task_id: 任务ID
+            question: 问题详情 {"question": "...", "options": [...]}
+            timeout: 超时时间（秒），默认5分钟
+        
+        Returns:
+            用户的回答，如果超时或任务被取消则返回 None
+        """
+        # 1. 检查是否已经有答案（可能用户在API提交后才调用此方法）
+        if task_id in self._waiting_tasks_answers:
+            answer = self._waiting_tasks_answers.pop(task_id)
+            logger.info(f"Found cached answer for task {task_id}: {answer[:50]}...")
+            return answer
+        
+        # 2. 更新任务状态为等待用户
+        task = self.running_tasks.get(task_id)
+        if not task:
+            logger.error(f"Task {task_id} not found when waiting for user answer")
+            return None
+        
+        task.status = TaskStatus.WAITING_FOR_USER
+        task.pending_question = question
+        await self._persist_task_to_db(task)
+        
+        # 3. 广播状态变化（通知前端显示问答弹窗）
+        if self._websocket_broadcast_callback:
+            try:
+                await self._websocket_broadcast_callback({
+                    "type": "task_status_change",
+                    "data": {
+                        "task_id": task_id,
+                        "status": "waiting_for_user",
+                        "pending_question": question
+                    }
+                })
+            except Exception as e:
+                logger.error(f"Failed to broadcast waiting_for_user status: {e}")
+        
+        # 4. 创建唤醒事件并等待
+        event = asyncio.Event()
+        self._waiting_tasks_events[task_id] = event
+        
+        logger.info(f"Task {task_id} waiting for user answer (timeout: {timeout}s)...")
+        
+        try:
+            # 等待用户提交答案或超时
+            await asyncio.wait_for(event.wait(), timeout=timeout)
+            
+            # 被唤醒，获取答案
+            answer = self._waiting_tasks_answers.pop(task_id, None)
+            if answer:
+                logger.info(f"Task {task_id} received user answer: {answer[:50]}...")
+                return answer
+            else:
+                logger.warning(f"Task {task_id} woke up but no answer found")
+                return None
+                
+        except asyncio.TimeoutError:
+            logger.warning(f"Task {task_id} waiting for user answer timed out after {timeout}s")
+            task.status = TaskStatus.FAILED
+            task.error = f"等待用户回答超时（{timeout}秒）"
+            task.completed_at = datetime.now(timezone.utc)
+            await self._persist_task_to_db(task)
+            return None
+            
+        except asyncio.CancelledError:
+            logger.info(f"Task {task_id} cancelled while waiting for user answer")
+            return None
+            
+        finally:
+            # 清理资源
+            if task_id in self._waiting_tasks_events:
+                del self._waiting_tasks_events[task_id]
+            
+            # 清除待回答问题
+            task.pending_question = None
+            task.status = TaskStatus.RUNNING  # 恢复运行状态（如果还在运行）
+            await self._persist_task_to_db(task)
 
 
 # 全局实例

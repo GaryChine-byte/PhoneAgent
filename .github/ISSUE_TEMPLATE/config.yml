@@ -1,14 +1,14 @@
 blank_issues_enabled: true
 contact_links:
   - name: 💬 General Discussion
-    url: https://github.com/tmwgsicp/PhoneAgent-Enterprise/discussions
+    url: https://github.com/tmwgsicp/PhoneAgent/discussions
     about: Ask questions, share ideas, or discuss the project
   
   - name: 📚 Documentation
-    url: https://github.com/tmwgsicp/PhoneAgent-Enterprise/tree/main/docs
+    url: https://github.com/tmwgsicp/PhoneAgent
     about: Read the documentation before opening an issue
   
   - name: 🎓 Show & Tell
-    url: https://github.com/tmwgsicp/PhoneAgent-Enterprise/discussions/categories/show-and-tell
+    url: https://github.com/tmwgsicp/PhoneAgent/discussions/categories/show-and-tell
     about: Share your use cases and success stories
 

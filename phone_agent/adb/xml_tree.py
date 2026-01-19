@@ -6,17 +6,21 @@
 # Copyright (c) 2024 Action State Labs
 
 """
-XML树解析模块 - 兼容层
+XML树解析模块 - V3版本
 
-⚠️ 此模块现在是 ui_hierarchy.py 的轻量包装器
-   保留用于向后兼容，新代码请直接使用 ui_hierarchy.py
+核心特性:
+- 基于android-use项目的改进算法
+- 使用IOU过滤重叠容器节点
+- 智能父子关系处理
+- 支持长按操作
+- 更好的文本聚合
 
-主要改进:
-- get_ui_hierarchy() 现在使用智能降级（yadb → uiautomator → uiautomator --nohup）
-- 自动重试和策略缓存
-- 大幅降低超时和空闲状态错误
+[WARN] 重要:
+- 仅支持V3解析器,旧版V2已废弃(效果差)
+- 如果XML解析失败,建议切换到视觉内核
+- get_ui_hierarchy() 使用智能降级（yadb → uiautomator → uiautomator --nohup）
 
-版本: V2.0 (增强版)
+版本: V3.0 (仅V3)
 """
 
 import xml.etree.ElementTree as ET
@@ -58,7 +62,7 @@ def get_ui_hierarchy(device_id: str | None = None) -> List[UIElement]:
     """
     获取设备的UI层级结构（增强版）
     
-    🆕 V2.0 改进:
+    [NEW] V2.0 改进:
     - 智能降级: yadb → uiautomator → uiautomator --nohup
     - 自动重试: 失败后自动尝试其他方法
     - 策略缓存: 记住每个设备的最佳方法
@@ -79,102 +83,61 @@ def get_ui_hierarchy(device_id: str | None = None) -> List[UIElement]:
 
 def parse_ui_xml(xml_content: str) -> List[UIElement]:
     """
-    解析UI XML，提取交互元素
+    解析UI XML，提取交互元素 (仅V3版本)
     
-    参考 Android Action Kernel 的过滤策略:
-    - 保留可交互元素（clickable 或 focusable/editable）
-    - 保留有信息的元素（有text、content-desc或resource-id）
-    - 跳过空的布局容器
-    - 按Y坐标排序（从上到下）
+    V3版本特性:
+    - 使用IOU过滤重叠容器节点
+    - 智能父子关系处理
+    - 支持长按操作(long-clickable)
+    - 更好的文本聚合
     
-    优化:
-    - 放宽过滤条件：允许可交互但无文本的元素（如图标按钮）
-    - 使用focusable判断可编辑性（与源项目一致）
-    - 统计调试信息
+    Args:
+        xml_content: XML字符串
+    
+    Returns:
+        UI元素列表
+        
+    Raises:
+        Exception: XML解析失败时抛出异常,上层应切换到视觉内核
+    
+    Note:
+        如果XML解析失败,建议切换到视觉内核(Vision Kernel)
+        旧版V2内核效果差,已废弃
     """
     try:
-        root = ET.fromstring(xml_content)
-    except ET.ParseError as e:
-        logger.error(f"XML解析失败: {e}")
-        return []
-    
-    elements = []
-    total_nodes = 0
-    interactive_nodes = 0
-    
-    for node in root.iter():
-        total_nodes += 1
+        from phone_agent.adb.xml_parser_v3 import parse_ui_xml_v3, convert_selector_map_to_elements
+        _, selector_map = parse_ui_xml_v3(xml_content)
+        elements = convert_selector_map_to_elements(selector_map)
         
-        # 获取属性
-        text = node.get("text", "").strip()
-        content_desc = node.get("content-desc", "").strip()
-        resource_id = node.get("resource-id", "")
-        class_name = node.get("class", "Unknown")
-        bounds_str = node.get("bounds", "")
+        if elements:
+            logger.debug(f"[OK] XML V3解析成功: 提取 {len(elements)} 个元素")
+        else:
+            logger.warning(f"[WARN] XML V3解析结果为空,建议切换到视觉内核")
         
-        # 🔥 参考源项目：只判断clickable和focusable
-        clickable = node.get("clickable", "false") == "true"
-        focusable = node.get("focusable", "false") == "true" or node.get("focus", "false") == "true"
-        enabled = node.get("enabled", "true") == "true"
-        
-        # ✅ 修复：采用源项目的宽松过滤策略
-        # 源项目逻辑：只要是可交互或有任何信息就保留
-        # 跳过完全空白且不可交互的布局容器
-        if not clickable and not focusable and not text and not content_desc:
-            continue
-        
-        # 统计可交互节点
-        if clickable or focusable:
-            interactive_nodes += 1
-        
-        # 解析坐标
-        try:
-            bounds_clean = bounds_str.replace("][", ",").strip("[]")
-            x1, y1, x2, y2 = map(int, bounds_clean.split(","))
-            
-            # 过滤无效bounds（面积为0）
-            if x1 == x2 or y1 == y2:
-                continue
-            
-            center_x = (x1 + x2) // 2
-            center_y = (y1 + y2) // 2
-        except (ValueError, AttributeError):
-            continue
-        
-        # 🔥 文本处理：优先text，回退到content-desc（完全对齐源项目）
-        display_text = text or content_desc or ""
-        class_short = class_name.split(".")[-1]
-        
-        # ✅ 移除了"完全无标识但可交互就用类型作为标识"的逻辑
-        # 源项目不做这个处理，保持原样
-        
-        elements.append(UIElement(
-            resource_id=resource_id.split("/")[-1] if "/" in resource_id else resource_id,
-            text=display_text,
-            element_type=class_short,
-            bounds=bounds_str,
-            center=(center_x, center_y),
-            clickable=clickable,
-            focusable=focusable,
-            enabled=enabled
-        ))
-    
-    # 🆕 调试日志
-    if elements:
-        logger.debug(f"XML解析: 总节点={total_nodes}, 可交互={interactive_nodes}, 最终保留={len(elements)}")
-    else:
-        logger.warning(f"⚠️ XML解析结果为空: 总节点={total_nodes}, 可交互={interactive_nodes}")
-        logger.warning("可能原因: 1) 界面正在加载 2) 所有元素都是纯布局容器 3) dump数据异常")
-    
-    elements.sort(key=lambda e: (e.center[1], e.center[0]))
-    return elements
+        return elements
+    except Exception as e:
+        logger.error(f"[X] XML V3解析失败: {e}")
+        logger.info("[NOTE] 建议切换到视觉内核(Vision Kernel)")
+        raise  # 抛出异常,让上层决定是否切换到视觉内核
 
 
-def format_elements_for_llm(elements: List[UIElement], max_elements: int = 20) -> str:
+def format_elements_for_llm(
+    elements: List[UIElement], 
+    max_elements: int = 20,
+    screen_width: int = 1080,
+    screen_height: int = 1920
+) -> str:
     """
     格式化UI元素为LLM可读的JSON
     
-
+    Args:
+        elements: UI元素列表
+        max_elements: 最大元素数量
+        screen_width: 屏幕宽度（用于归一化坐标）
+        screen_height: 屏幕高度（用于归一化坐标）
+    
+    Returns:
+        JSON格式的元素列表，坐标为归一化值 (0-1000)
     """
     import json
     
@@ -191,12 +154,17 @@ def format_elements_for_llm(elements: List[UIElement], max_elements: int = 20) -
     
     elements_data = []
     for elem in selected:
+        # 归一化坐标 (像素 → 0-1000)
+        pixel_x, pixel_y = elem.center
+        normalized_x = int(pixel_x / screen_width * 1000)
+        normalized_y = int(pixel_y / screen_height * 1000)
+        
         item = {
             "text": elem.text,
             "type": elem.element_type,
-            "center": list(elem.center),
-            "clickable": elem.clickable,  # ✅ 保留：明确元素是否可点击
-            "focusable": elem.focusable,  # ✅ 保留：明确元素是否可聚焦/输入
+            "center": [normalized_x, normalized_y],  # 归一化坐标 (0-1000)
+            "clickable": elem.clickable,  # [OK] 保留：明确元素是否可点击
+            "focusable": elem.focusable,  # [OK] 保留：明确元素是否可聚焦/输入
             "action": "tap" if elem.clickable else ("input" if elem.focusable else "read")
         }
         if elem.resource_id:
@@ -234,4 +202,4 @@ __all__ = [
     "get_device_strategy"
 ]
 
-__version__ = "2.0.0"
+__version__ = "3.0.0"

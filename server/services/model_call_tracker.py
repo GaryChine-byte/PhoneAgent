@@ -1,3 +1,7 @@
+#!/usr/bin/env python3
+# Copyright (C) 2025 PhoneAgent Contributors
+# Licensed under AGPL-3.0
+
 """
 模型调用追踪器
 
@@ -69,7 +73,7 @@ class ModelCallTracker:
                     )
                     
                     logger.debug(
-                        f"📊 Model call tracked: {model_name} | "
+                        f"Model call tracked: {model_name} | "
                         f"{usage.get('total_tokens', 0)} tokens | "
                         f"${cost_usd:.4f}"
                     )
@@ -81,8 +85,7 @@ class ModelCallTracker:
             
         except Exception as e:
             # 记录失败不应影响主流程
-            logger.error(f"❌ Failed to track model call: {e}")
-    
+            logger.error(f"Failed to track model call: {e}")     
     @staticmethod
     def _calculate_cost(model_name: str, prompt_tokens: int, completion_tokens: int) -> float:
         """

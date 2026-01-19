@@ -26,13 +26,13 @@ try:
     
     if env_path.exists():
         load_dotenv(env_path)
-        logger.info(f"✅ 已加载配置文件: {env_path}")
+        logger.info(f"已加载配置文件: {env_path}")
     else:
-        logger.info(f"ℹ️  未找到 .env 文件: {env_path}")
-        logger.info(f"ℹ️  使用系统环境变量或创建 .env 文件")
+        logger.info(f"未找到 .env 文件: {env_path}")
+        logger.info(f"使用系统环境变量或创建 .env 文件")
 except ImportError:
-    logger.warning("⚠️  未安装 python-dotenv，仅使用系统环境变量")
-    logger.info("💡 安装方法: pip install python-dotenv")
+    logger.warning("未安装 python-dotenv，仅使用系统环境变量")
+    logger.info("安装方法: pip install python-dotenv")
 
 
 class Config:
@@ -60,19 +60,19 @@ class Config:
     # 智谱AI (默认)
     ZHIPU_API_KEY: str = os.getenv("ZHIPU_API_KEY", "")
     
-    # ✅ 模型提供商配置（支持多平台）
+    # 模型提供商配置（支持多平台）
     # 支持: zhipu, openai, gemini, qwen
     MODEL_PROVIDER: str = os.getenv("MODEL_PROVIDER", "zhipu")
     
-    # ✅ 自定义 base_url（覆盖默认值）
+    # 自定义 base_url（覆盖默认值）
     # 如果不设置，会根据 MODEL_PROVIDER 自动选择
     CUSTOM_BASE_URL: Optional[str] = os.getenv("CUSTOM_BASE_URL")
     
-    # ✅ 自定义 API Key（用于非智谱AI的平台）
+    # 自定义 API Key（用于非智谱AI的平台）
     # 优先级: CUSTOM_API_KEY > ZHIPU_API_KEY
     CUSTOM_API_KEY: Optional[str] = os.getenv("CUSTOM_API_KEY")
     
-    # ✅ 自定义默认模型名称
+    # 自定义默认模型名称
     # 如果不设置，会使用智能模型选择器
     CUSTOM_MODEL_NAME: Optional[str] = os.getenv("CUSTOM_MODEL_NAME")
     
@@ -91,7 +91,7 @@ class Config:
     MAX_TOKENS: int = int(os.getenv("MAX_TOKENS", "3000"))  # 调整为3000（推荐值）
     TEMPERATURE: float = float(os.getenv("TEMPERATURE", "0.7"))
     
-    # ✅ 任务执行配置
+    # 任务执行配置
     MAX_TASK_STEPS: int = int(os.getenv("MAX_TASK_STEPS", "100"))  # 默认最大执行步数
     
     # ============================================
@@ -157,34 +157,34 @@ class Config:
         # 打印结果（优先使用logger，否则使用print向后兼容）
         if logger:
             if not errors and not warnings:
-                logger.info("✅ 配置验证通过")
-                logger.info(f"   最大设备数: {cls.MAX_DEVICES}")
-                logger.info("   💡 模型会根据任务自动选择（智能选择器）")
+                logger.info("配置验证通过")
+                logger.info(f"最大设备数: {cls.MAX_DEVICES}")
+                logger.info("模型会根据任务自动选择（智能选择器）")
             else:
                 if errors:
-                    logger.error("❌ 配置验证失败:")
+                    logger.error("配置验证失败:")
                     for error in errors:
-                        logger.error(f"   • {error}")
+                        logger.error(f"• {error}")
                 
                 if warnings:
-                    logger.warning("⚠️  配置警告:")
+                    logger.warning("配置警告:")
                     for warning in warnings:
-                        logger.warning(f"   • {warning}")
+                        logger.warning(f"• {warning}")
         elif verbose:
             if not errors and not warnings:
-                print("✅ 配置验证通过")
-                print(f"   最大设备数: {cls.MAX_DEVICES}")
-                print(f"   💡 模型会根据任务自动选择（智能选择器）")
+                print("配置验证通过")
+                print(f"最大设备数: {cls.MAX_DEVICES}")
+                print(f"模型会根据任务自动选择（智能选择器）")
             else:
                 if errors:
-                    print("❌ 配置验证失败:")
+                    print("配置验证失败:")
                     for error in errors:
-                        print(f"   • {error}")
+                        print(f"• {error}")
                 
                 if warnings:
-                    print("⚠️  配置警告:")
+                    print("配置警告:")
                     for warning in warnings:
-                        print(f"   • {warning}")
+                        print(f"• {warning}")
         
         return len(errors) == 0
     
@@ -254,14 +254,14 @@ if __name__ == "__main__":
     
     # 验证配置
     if config.validate():
-        print("\n✅ 配置验证通过！")
-        print("\n💡 提示: 模型会根据任务内核自动选择（XML/Vision/Planning）")
-        print("   详见: phone_agent.model.selector.select_model_for_kernel()")
+        print("\n配置验证通过！")
+        print("\n提示: 模型会根据任务内核自动选择（XML/Vision/Planning）")
+        print("详见: phone_agent.model.selector.select_model_for_kernel()")
     else:
         print("\n请先配置 API Key！")
-        print("方法 1: 设置环境变量")
-        print("  export ZHIPU_API_KEY='your_key'")
-        print("\n方法 2: 创建 .env 文件")
-        print("  cp env.example .env")
-        print("  # 然后编辑 .env 文件填入 API Key")
+    print("方法 1: 设置环境变量")
+    print("  export ZHIPU_API_KEY='your_key'")
+    print("\n方法 2: 创建 .env 文件")
+    print("  cp env.example .env")
+    print("  # 然后编辑 .env 文件填入 API Key")
 

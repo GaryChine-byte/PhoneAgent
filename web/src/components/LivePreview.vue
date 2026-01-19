@@ -338,7 +338,7 @@ const startPreview = async () => {
   isLoading.value = true
   
   try {
-    // ✅ 调用 H.264 API
+    // 调用 H.264 API
     await request.post(`/scrcpy/start/${selectedDeviceId.value}`, {
       bitrate: settings.value.bitrate * 1000000,
       max_size: settings.value.maxSize,
@@ -368,8 +368,7 @@ const stopPreview = async () => {
   isStopping.value = true
   
   try {
-    // ✅ 调用新的 H.264 停止 API
-    await request.post(`/scrcpy/stop/${selectedDeviceId.value}`)
+ // 调用新的 H.264 停止 API     await request.post(`/scrcpy/stop/${selectedDeviceId.value}`)
     
     isPreviewActive.value = false
     enableControl.value = false
@@ -384,8 +383,7 @@ const stopPreview = async () => {
   }
 }
 
-// ✅ 移除 MJPEG 相关的处理函数（H.264 组件内部处理）
-// 视频流加载、错误、点击等都由 LivePreviewH264.vue 组件处理
+// 移除 MJPEG 相关的处理函数（H.264 组件内部处理） // 视频流加载、错误、点击等都由 LivePreviewH264.vue 组件处理
 
 // 发送按键
 const sendKey = async (key) => {
@@ -447,8 +445,7 @@ const interruptTask = async () => {
   }
 }
 
-// ✅ 延迟监控由 H.264 组件内部实现，这里不需要了
-
+// 延迟监控由 H.264 组件内部实现，这里不需要了 
 // 显示设置
 const showSettings = () => {
   settingsVisible.value = true

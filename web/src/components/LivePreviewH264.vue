@@ -85,8 +85,7 @@ function connect() {
     jmuxerInstance = new jMuxer({
       node: videoRef.value,
       mode: 'video',
-      flushingTime: 0,  // ✅ 零延迟刷新
-      fps: 30,
+ flushingTime: 0, // 零延迟刷新       fps: 30,
       clearBuffer: true,
       debug: false,
       onError: (error) => {
@@ -121,7 +120,7 @@ function connect() {
     ws.binaryType = 'arraybuffer'
     
     ws.onopen = () => {
-      console.log('✅ WebSocket connected')
+      console.log('WebSocket connected')
       status.value = '已连接'
       statusType.value = 'success'
       startMonitors()

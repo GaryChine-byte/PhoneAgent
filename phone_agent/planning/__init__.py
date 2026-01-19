@@ -2,7 +2,7 @@
 # Copyright (C) 2025 PhoneAgent Contributors
 # Licensed under AGPL-3.0
 
-"""Planning mode for PhoneAgent - AI-powered task planning and execution."""
+"""PhoneAgent规划模式 - AI驱动的任务规划和执行"""
 
 from .planner import PlanningAgent, TaskPlan
 from .executor import PlanExecutor, ExecutionResult

@@ -34,8 +34,7 @@ async def start_scrcpy(device_id: str, request: StartScrcpyRequest):
         device_id: 设备标识（FRP 模式下是 localhost:61XX）
     """
     try:
-        logger.info(f"🚀 Starting H.264 stream for device: {device_id}")
-        
+        logger.info(f"Starting H.264 stream for device: {device_id}")
         manager = get_scrcpy_manager()
         session = manager.start_session(
             device_id=device_id,
@@ -44,9 +43,9 @@ async def start_scrcpy(device_id: str, request: StartScrcpyRequest):
             framerate=request.framerate
         )
         
-        # ✅ 优化：减少等待时间，改为异步轮询
+        # 优化：减少等待时间，改为异步轮询
         if not session.wait_for_init_data(timeout=10.0):  # 10秒超时
-            logger.warning(f"⚠️ Scrcpy初始化数据超时，但会话已启动")
+            logger.warning(f"Scrcpy初始化数据超时，但会话已启动")
             # 不抛出异常，允许前端自行重试连接
             return {
                 "success": True,
@@ -82,7 +81,7 @@ async def stop_scrcpy(device_id: str):
     try:
         manager = get_scrcpy_manager()
         
-        # ✅ 优化：异步执行停止操作，不等待完成
+        # 优化：异步执行停止操作，不等待完成
         import asyncio
         loop = asyncio.get_event_loop()
         loop.run_in_executor(None, manager.stop_session, device_id)
@@ -126,7 +125,7 @@ async def stream_websocket(websocket: WebSocket, device_id: str):
     
     try:
         # 1. 等待初始化数据就绪（增加超时时间）
-        if not session.wait_for_init_data(timeout=30.0):  # 🆕 从10秒增加到30秒
+        if not session.wait_for_init_data(timeout=30.0):  # 从10秒增加到30秒
             await websocket.send_json({
                 "error": "Init data timeout",
                 "message": "Failed to get SPS/PPS/IDR within 30 seconds"
@@ -138,7 +137,7 @@ async def stream_websocket(websocket: WebSocket, device_id: str):
         init_data = session.get_init_data()
         if init_data:
             await websocket.send_bytes(init_data)
-            logger.info(f"✅ Sent init data: {len(init_data)} bytes")
+            logger.info(f"Sent init data: {len(init_data)} bytes")
         else:
             await websocket.send_json({"error": "Init data not available"})
             await websocket.close()
@@ -160,7 +159,7 @@ async def stream_websocket(websocket: WebSocket, device_id: str):
                 
                 # 每 100 个 NAL 单元打印一次日志
                 if nal_count % 100 == 0:
-                    logger.debug(f"📊 Sent {nal_count} NAL units to {device_id}")
+                    logger.debug(f"Sent {nal_count} NAL units to {device_id}")
             else:
                 # 超时，检查连接状态
                 try:
@@ -170,10 +169,10 @@ async def stream_websocket(websocket: WebSocket, device_id: str):
                     break
     
     except WebSocketDisconnect:
-        logger.info(f"📵 WebSocket disconnected: {device_id}")
+        logger.info(f"WebSocket disconnected: {device_id}")
     
     except Exception as e:
-        logger.error(f"❌ WebSocket error: {e}", exc_info=True)
+        logger.error(f"WebSocket error: {e}", exc_info=True)
         try:
             await websocket.send_json({"error": str(e)})
         except:
@@ -184,7 +183,7 @@ async def stream_websocket(websocket: WebSocket, device_id: str):
             await websocket.close()
         except:
             pass
-        logger.info(f"🛑 H.264 stream ended for {device_id}")
+        logger.info(f"H.264 stream ended for {device_id}")
 
 
 @router.get("/sessions")
@@ -250,7 +249,7 @@ async def control_touch(device_id: str, request: TouchRequest):
         # 转换 device_id 为 ADB 地址 (device_6100 -> localhost:6100)
         adb_address = device_id_to_adb_address(device_id)
         
-        # ✅ 优化：动态获取设备分辨率
+        # 优化：动态获取设备分辨率
         scanner = get_device_scanner()
         scanned_devices = scanner.get_scanned_devices()
         
@@ -264,7 +263,7 @@ async def control_touch(device_id: str, request: TouchRequest):
                     if len(parts) == 2:
                         width = int(parts[0])
                         height = int(parts[1])
-                        logger.debug(f"✅ Using device resolution: {width}x{height}")
+                        logger.debug(f"Using device resolution: {width}x{height}")
                 except Exception as e:
                     logger.warning(f"Failed to parse resolution: {e}, using default")
         
@@ -272,7 +271,7 @@ async def control_touch(device_id: str, request: TouchRequest):
         actual_x = int(request.x * width / 100)
         actual_y = int(request.y * height / 100)
         
-        logger.info(f"🎯 Touch: {request.x}%, {request.y}% -> {actual_x}, {actual_y} (screen: {width}x{height})")
+        logger.info(f"Touch: {request.x}%, {request.y}% -> {actual_x}, {actual_y} (screen: {width}x{height})")
         
         if request.action == "tap":
             cmd = f"adb -s {adb_address} shell input tap {actual_x} {actual_y}"
@@ -317,7 +316,7 @@ async def control_swipe(device_id: str, request: SwipeRequest):
         # 转换 device_id 为 ADB 地址 (device_6100 -> localhost:6100)
         adb_address = device_id_to_adb_address(device_id)
         
-        # ✅ 优化：动态获取设备分辨率
+        # 优化：动态获取设备分辨率
         scanner = get_device_scanner()
         scanned_devices = scanner.get_scanned_devices()
         

@@ -125,8 +125,7 @@
     >
       <el-alert
         v-if="!isEditing"
-        title="💡 提示：系统已预置100+常用应用"
-        type="info"
+ title=" 提示：系统已预置100+常用应用"         type="info"
         :closable="false"
         style="margin-bottom: 20px;"
       >
@@ -212,8 +211,7 @@ const router = useRouter()
 
 const apps = ref([])
 const loading = ref(false)
-// const scanning = ref(false) // ✅ 已移除扫描功能
-const searchQuery = ref('')
+// const scanning = ref(false) // 已移除扫描功能 const searchQuery = ref('')
 const selectedCategory = ref('全部')
 const dialogVisible = ref(false)
 const isEditing = ref(false)
@@ -358,8 +356,7 @@ async function saveAllApps() {
 }
 
 // 扫描设备已安装的App
-// ✅ 已移除扫描功能
-// 原因：扫描出来的都是英文包名，用户体验不好
+// 已移除扫描功能 // 原因：扫描出来的都是英文包名，用户体验不好
 // 方案：使用预置的100+常用应用 + 手动添加
 
 async function loadApps() {

@@ -286,10 +286,8 @@ onMounted(() => {
 
 .stat-card-unified {
   border: 1px solid var(--border-light);
-  border-radius: var(--radius-base);  /* ✅ 添加圆角 */
-  transition: all 0.2s ease;
-  background: var(--bg-primary);  /* ✅ 添加背景色 */
-}
+ border-radius: var(--radius-base); /* 添加圆角 */   transition: all 0.2s ease;
+ background: var(--bg-primary); /* 添加背景色 */ }
 
 .stat-card-unified:hover {
   transform: translateY(-2px);
@@ -325,8 +323,7 @@ onMounted(() => {
 .distribution-card {
   margin-bottom: var(--space-xl);
   border: 1px solid var(--border-light);
-  border-radius: var(--radius-base);  /* ✅ 添加圆角 */
-}
+ border-radius: var(--radius-base); /* 添加圆角 */ }
 
 .kernel-distribution,
 .provider-distribution {

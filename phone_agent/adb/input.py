@@ -1,4 +1,8 @@
-"""Input utilities for Android device text input."""
+#!/usr/bin/env python3
+# Copyright (C) 2025 PhoneAgent Contributors
+# Licensed under AGPL-3.0
+
+"""Android设备文本输入工具"""
 
 import base64
 import subprocess

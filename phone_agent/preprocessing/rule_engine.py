@@ -1,3 +1,7 @@
+#!/usr/bin/env python3
+# Copyright (C) 2025 PhoneAgent Contributors
+# Licensed under AGPL-3.0
+
 """
 规则引擎执行器
 
@@ -58,7 +62,7 @@ class RuleEngineExecutor:
         if not app_name:
             return False, "缺少应用名称"
         
-        logger.info(f"🚀 规则引擎: 启动应用 {app_name}")
+        logger.info(f" 规则引擎: 启动应用 {app_name}")
         success = launch_app(app_name, self.device_id)
         
         if success:
@@ -82,7 +86,7 @@ class RuleEngineExecutor:
         """执行返回上级"""
         from phone_agent.adb.device import press_key
         
-        logger.info(f"⬅️  规则引擎: 返回上级")
+        logger.info(f"<-  规则引擎: 返回上级")
         success = press_key("KEYCODE_BACK", self.device_id)
         
         if success:

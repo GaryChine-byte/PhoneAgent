@@ -65,13 +65,13 @@ def get_ui_hierarchy_robust(
     for attempt in range(max_retries):
         for strategy in strategies:
             try:
-                logger.info(f"🔄 尝试: {strategy} (第{attempt+1}次)")
+                logger.info(f"[UPDATE] 尝试: {strategy} (第{attempt+1}次)")
                 elements = _execute_strategy(strategy, device_id, timeout)
                 
                 if elements:
                     # 成功！记住这个策略
                     _device_strategies[device_key] = strategy
-                    logger.info(f"✅ {strategy} 成功，找到 {len(elements)} 个元素")
+                    logger.info(f"[OK] {strategy} 成功，找到 {len(elements)} 个元素")
                     return elements
             
             except Exception as e:
@@ -83,7 +83,7 @@ def get_ui_hierarchy_robust(
         if attempt < max_retries - 1:
             import time
             wait = 2 ** attempt
-            logger.info(f"⏳ 等待{wait}秒后重试...")
+            logger.info(f"[TODO] 等待{wait}秒后重试...")
             time.sleep(wait)
     
     raise RuntimeError(
@@ -109,7 +109,7 @@ def _execute_strategy(
         raise ValueError(f"未知策略: {strategy}")
 
 
-# ❌ REMOVED: _try_yadb() function
+# [X] REMOVED: _try_yadb() function
 # Reason: yadb does NOT support UI layout dump
 # This was a misunderstanding of yadb's capabilities
 

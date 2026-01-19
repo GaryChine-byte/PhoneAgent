@@ -3,7 +3,21 @@
 # Modified: Copyright (C) 2025 PhoneAgent Contributors (AGPL-3.0)
 # Based on: https://github.com/zai-org/Open-AutoGLM
 
-"""Action handler for processing AI model outputs."""
+"""
+动作处理器 - 处理AI模型输出（已废弃）
+
+⚠️ [DEPRECATED] 此模块将在 v2.1.0 移除 ⚠️
+
+Phase 4-5 重构后，ActionHandler 已被完全替代：
+- 旧：Vision Kernel → ActionHandler → ADB
+- 新：Vision Kernel → ResponseParser → parse_action → ActionExecutor
+
+迁移指南：
+- 解析：使用 ResponseParser.parse() 或 vision_format.parse_vision_action()
+- 执行：使用 ActionExecutor.execute()
+
+详见：PHASE45_REFACTOR_COMPLETE_READY_FOR_SERVER.md
+"""
 
 import time
 from dataclasses import dataclass
@@ -26,7 +40,7 @@ from phone_agent.adb import (
 
 @dataclass
 class ActionResult:
-    """Result of an action execution."""
+    """动作执行结果"""
 
     success: bool
     should_finish: bool
@@ -36,13 +50,26 @@ class ActionResult:
 
 class ActionHandler:
     """
-    Handles execution of actions from AI model output.
+    Vision Kernel 格式适配器（已废弃）
+    
+    [DEPRECATED] 此类将在 v2.1.0 移除
+    
+    原职责:
+    1. 解析 Vision Kernel 格式 (do(action="Tap", element=[x,y]))
+    2. 转换为标准 Action 对象（保持归一化坐标）
+    3. 委托给 ActionExecutor 执行
+    4. 处理特殊动作 (finish, takeover等)
+    
+    替代方案：
+    - 解析：ResponseParser.parse() 或 vision_format.parse_vision_action()
+    - 执行：ActionExecutor.execute()
+    - Take_over：需手动实现回调逻辑（未来考虑加入 ActionExecutor）
 
     Args:
-        device_id: Optional ADB device ID for multi-device setups.
-        confirmation_callback: Optional callback for sensitive action confirmation.
-            Should return True to proceed, False to cancel.
-        takeover_callback: Optional callback for takeover requests (login, captcha).
+        device_id: ADB设备ID(可选),用于多设备场景
+        confirmation_callback: 敏感操作确认回调(可选)
+            返回True继续执行,返回False取消操作
+        takeover_callback: 接管请求回调(可选),用于登录、验证码等场景
     """
 
     def __init__(
@@ -51,26 +78,47 @@ class ActionHandler:
         confirmation_callback: Callable[[str], bool] | None = None,
         takeover_callback: Callable[[str], None] | None = None,
     ):
+        warnings.warn(
+            "ActionHandler 已废弃，将在 v2.1.0 移除。"
+            "请使用 ResponseParser + ActionExecutor 替代。",
+            DeprecationWarning,
+            stacklevel=2
+        )
         self.device_id = device_id
         self.confirmation_callback = confirmation_callback or self._default_confirmation
         self.takeover_callback = takeover_callback or self._default_takeover
+        
+        # 核心执行器（延迟初始化，需要屏幕尺寸）
+        self._executor = None
 
     def execute(
         self, action: dict[str, Any], screen_width: int, screen_height: int
     ) -> ActionResult:
         """
-        Execute an action from the AI model.
+        执行AI模型输出的动作
+        
+        优化: 内部委托给 ActionExecutor 执行
 
         Args:
-            action: The action dictionary from the model.
-            screen_width: Current screen width in pixels.
-            screen_height: Current screen height in pixels.
+            action: 来自模型的动作字典
+            screen_width: 当前屏幕宽度(像素)
+            screen_height: 当前屏幕高度(像素)
 
         Returns:
-            ActionResult indicating success and whether to finish.
+            ActionResult 表示执行是否成功以及是否应该结束
         """
+        # 延迟初始化 ActionExecutor（需要屏幕尺寸）
+        if self._executor is None:
+            from phone_agent.actions import ActionExecutor
+            self._executor = ActionExecutor(
+                device_id=self.device_id,
+                screen_width=screen_width,
+                screen_height=screen_height
+            )
+        
         action_type = action.get("_metadata")
 
+        # 处理特殊动作: finish
         if action_type == "finish":
             return ActionResult(
                 success=True, should_finish=True, message=action.get("message")
@@ -84,200 +132,209 @@ class ActionHandler:
             )
 
         action_name = action.get("action")
-        handler_method = self._get_handler(action_name)
-
-        if handler_method is None:
-            return ActionResult(
-                success=False,
-                should_finish=False,
-                message=f"Unknown action: {action_name}",
-            )
-
+        
+        # 处理特殊动作: Take_over (人工接管，需要callback)
+        # Note: Take_over 是唯一保留的特殊动作，因为需要 takeover_callback
+        # 其他动作(Note/Call_API/Interact)已被标准动作替代(RecordImportantContent/Answer/AskUser)
+        if action_name == "Take_over":
+            message = action.get("message", "需要用户介入")
+            self.takeover_callback(message)
+            return ActionResult(True, False, message=message)
+        
+        # 标准动作: 转换并委托给 ActionExecutor
         try:
-            return handler_method(action, screen_width, screen_height)
+            standard_action = self._convert_to_standard_action(action, screen_width, screen_height)
+            result = self._executor.execute(standard_action)
+            
+            # 转换回 ActionResult
+            return ActionResult(
+                success=result["success"],
+                should_finish=False,
+                message=result.get("message")
+            )
         except Exception as e:
             return ActionResult(
                 success=False, should_finish=False, message=f"Action failed: {e}"
             )
 
-    def _get_handler(self, action_name: str) -> Callable | None:
-        """Get the handler method for an action."""
-        handlers = {
-            "Launch": self._handle_launch,
-            "Tap": self._handle_tap,
-            "Type": self._handle_type,
-            "Type_Name": self._handle_type,
-            "Swipe": self._handle_swipe,
-            "Back": self._handle_back,
-            "Home": self._handle_home,
-            "Double Tap": self._handle_double_tap,
-            "Long Press": self._handle_long_press,
-            "Wait": self._handle_wait,
-            "Take_over": self._handle_takeover,
-            "Note": self._handle_note,
-            "Call_API": self._handle_call_api,
-            "Interact": self._handle_interact,
-        }
-        return handlers.get(action_name)
-
-    def _convert_relative_to_absolute(
-        self, element: list[int], screen_width: int, screen_height: int
-    ) -> tuple[int, int]:
-        """Convert relative coordinates (0-1000) to absolute pixels."""
-        x = int(element[0] / 1000 * screen_width)
-        y = int(element[1] / 1000 * screen_height)
-        return x, y
-
-    def _handle_launch(self, action: dict, width: int, height: int) -> ActionResult:
-        """Handle app launch action."""
-        app_name = action.get("app")
-        if not app_name:
-            return ActionResult(False, False, "No app name specified")
-
-        success = launch_app(app_name, self.device_id)
-        if success:
-            return ActionResult(True, False)
-        return ActionResult(False, False, f"App not found: {app_name}")
-
-    def _handle_tap(self, action: dict, width: int, height: int) -> ActionResult:
-        """Handle tap action."""
-        element = action.get("element")
-        if not element:
-            return ActionResult(False, False, "No element coordinates")
-
-        x, y = self._convert_relative_to_absolute(element, width, height)
-
-        # Check for sensitive operation
-        if "message" in action:
-            if not self.confirmation_callback(action["message"]):
-                return ActionResult(
-                    success=False,
-                    should_finish=True,
-                    message="User cancelled sensitive operation",
-                )
-
-        tap(x, y, self.device_id)
-        return ActionResult(True, False)
-
-    def _handle_type(self, action: dict, width: int, height: int) -> ActionResult:
-        """Handle text input action."""
-        text = action.get("text", "")
-
-        # ✅ 使用智能输入（优先yadb，兜底ADB Keyboard）
-        from phone_agent.adb.smart_input import smart_type_text
+    def _convert_to_standard_action(self, action: dict, width: int, height: int):
+        """
+        将 Vision Kernel 格式转换为标准 Action 对象
         
-        success = smart_type_text(text, self.device_id)
+        注意：保持归一化坐标(0-1000)，由 ActionExecutor 统一转换为像素
         
-        if success:
-            return ActionResult(True, False)
+        支持14种基础动作 + 7种高级动作
+        """
+        from phone_agent.actions.standard_actions import (
+            TapAction, InputTextAction, SwipeAction, LaunchAppAction,
+            DoubleTapAction, LongPressAction, WaitAction, PressKeyAction,
+            DragAction, ScrollAction, KeyEventAction, AnswerAction,
+            AskUserAction, RecordImportantContentAction, GenerateOrUpdateTodosAction
+        )
+        
+        action_name = action.get("action")
+        
+        # ============================================
+        # 基础动作（14种）
+        # ============================================
+        
+        if action_name == "Tap":
+            element = action.get("element", [500, 500])  # 归一化坐标 (0-1000)
+            return TapAction(coordinates=element, reason=action.get("message", ""))
+        
+        elif action_name in ["Type", "Type_Name"]:
+            text = action.get("text", "")
+            return InputTextAction(text=text, reason="")
+        
+        elif action_name == "Swipe":
+            start = action.get("start", [500, 1000])  # 归一化坐标
+            end = action.get("end", [500, 500])      # 归一化坐标
+            return SwipeAction(
+                start=start,
+                end=end,
+                reason=""
+            )
+        
+        elif action_name == "Launch":
+            app_name = action.get("app", "")
+            return LaunchAppAction(app_name=app_name, reason="")
+        
+        elif action_name == "Double Tap":
+            element = action.get("element", [500, 500])  # 归一化坐标
+            return DoubleTapAction(coordinates=element, reason="")
+        
+        elif action_name == "Long Press":
+            element = action.get("element", [500, 500])  # 归一化坐标
+            duration = action.get("duration", 3000)
+            return LongPressAction(coordinates=element, duration=duration, reason="")
+        
+        elif action_name == "Wait":
+            duration_str = action.get("duration", "1 second")
+            # 解析duration: "x seconds" -> float
+            try:
+                if isinstance(duration_str, (int, float)):
+                    duration = float(duration_str)
+                else:
+                    duration = float(duration_str.split()[0])
+            except:
+                duration = 1.0
+            return WaitAction(seconds=duration, reason="")
+        
+        elif action_name == "Back":
+            return PressKeyAction(key="back", reason="")
+        
+        elif action_name == "Home":
+            return PressKeyAction(key="home", reason="")
+        
+        # ============================================
+        # 高级动作（7种）
+        # ============================================
+        
+        elif action_name == "Drag":
+            start = action.get("start", [500, 1000])  # 归一化坐标
+            end = action.get("end", [500, 500])      # 归一化坐标
+            duration = action.get("duration", 500)
+            return DragAction(
+                start=start,
+                end=end,
+                duration=duration,
+                reason=""
+            )
+        
+        elif action_name == "Scroll":
+            # Vision提示词: x, y, direction, distance
+            # 标准动作库: coordinates, value
+            x = action.get("x", 540)  # 归一化坐标
+            y = action.get("y", 800)  # 归一化坐标
+            direction = action.get("direction", "up")
+            distance = action.get("distance", 500)
+            
+            # 转换direction+distance -> value
+            if direction in ["up", "right"]:
+                value = distance
+            else:
+                value = -distance
+            
+            return ScrollAction(
+                coordinates=[x, y],  # 保持归一化
+                value=value,
+                reason=""
+            )
+        
+        elif action_name == "Key_Event":
+            key = action.get("key", "KEYCODE_ENTER")
+            # 移除KEYCODE_前缀（如果有）
+            if key.startswith("KEYCODE_"):
+                key = key[8:].lower()
+            return KeyEventAction(key=key, reason="")
+        
+        elif action_name == "Record_Important_Content":
+            content = action.get("content", "")
+            category = action.get("category", "")
+            return RecordImportantContentAction(
+                content=content,
+                category=category,
+                reason=""
+            )
+        
+        elif action_name == "Generate_Or_Update_TODOs":
+            todos = action.get("todos", "")
+            return GenerateOrUpdateTodosAction(
+                todos=todos,
+                reason=""
+            )
+        
+        elif action_name == "Ask_User":
+            question = action.get("question", "")
+            options = action.get("options", None)
+            return AskUserAction(
+                question=question,
+                options=options,
+                reason=""
+            )
+        
+        elif action_name == "Answer":
+            answer = action.get("answer", "")
+            success = action.get("success", True)
+            return AnswerAction(
+                answer=answer,
+                success=success,
+                reason=""
+            )
+        
         else:
-            return ActionResult(False, False, "文本输入失败")
-
-    def _handle_swipe(self, action: dict, width: int, height: int) -> ActionResult:
-        """Handle swipe action."""
-        start = action.get("start")
-        end = action.get("end")
-
-        if not start or not end:
-            return ActionResult(False, False, "Missing swipe coordinates")
-
-        start_x, start_y = self._convert_relative_to_absolute(start, width, height)
-        end_x, end_y = self._convert_relative_to_absolute(end, width, height)
-
-        swipe(start_x, start_y, end_x, end_y, device_id=self.device_id)
-        return ActionResult(True, False)
-
-    def _handle_back(self, action: dict, width: int, height: int) -> ActionResult:
-        """Handle back button action."""
-        back(self.device_id)
-        return ActionResult(True, False)
-
-    def _handle_home(self, action: dict, width: int, height: int) -> ActionResult:
-        """Handle home button action."""
-        home(self.device_id)
-        return ActionResult(True, False)
-
-    def _handle_double_tap(self, action: dict, width: int, height: int) -> ActionResult:
-        """Handle double tap action."""
-        element = action.get("element")
-        if not element:
-            return ActionResult(False, False, "No element coordinates")
-
-        x, y = self._convert_relative_to_absolute(element, width, height)
-        double_tap(x, y, self.device_id)
-        return ActionResult(True, False)
-
-    def _handle_long_press(self, action: dict, width: int, height: int) -> ActionResult:
-        """Handle long press action."""
-        element = action.get("element")
-        if not element:
-            return ActionResult(False, False, "No element coordinates")
-
-        x, y = self._convert_relative_to_absolute(element, width, height)
-        long_press(x, y, device_id=self.device_id)
-        return ActionResult(True, False)
-
-    def _handle_wait(self, action: dict, width: int, height: int) -> ActionResult:
-        """Handle wait action."""
-        duration_str = action.get("duration", "1 seconds")
-        try:
-            duration = float(duration_str.replace("seconds", "").strip())
-        except ValueError:
-            duration = 1.0
-
-        time.sleep(duration)
-        return ActionResult(True, False)
-
-    def _handle_takeover(self, action: dict, width: int, height: int) -> ActionResult:
-        """Handle takeover request (login, captcha, etc.)."""
-        message = action.get("message", "User intervention required")
-        self.takeover_callback(message)
-        return ActionResult(True, False)
-
-    def _handle_note(self, action: dict, width: int, height: int) -> ActionResult:
-        """Handle note action (placeholder for content recording)."""
-        # This action is typically used for recording page content
-        # Implementation depends on specific requirements
-        return ActionResult(True, False)
-
-    def _handle_call_api(self, action: dict, width: int, height: int) -> ActionResult:
-        """Handle API call action (placeholder for summarization)."""
-        # This action is typically used for content summarization
-        # Implementation depends on specific requirements
-        return ActionResult(True, False)
-
-    def _handle_interact(self, action: dict, width: int, height: int) -> ActionResult:
-        """Handle interaction request (user choice needed)."""
-        # This action signals that user input is needed
-        return ActionResult(True, False, message="User interaction required")
+            raise ValueError(f"Unknown action: {action_name}")
+    
+    # [REMOVED] _convert_relative_to_absolute 已移除
+    # 坐标转换统一由 ActionExecutor 处理
 
     @staticmethod
     def _default_confirmation(message: str) -> bool:
-        """Default confirmation callback using console input."""
-        response = input(f"Sensitive operation: {message}\nConfirm? (Y/N): ")
+        """默认确认回调(使用控制台输入)"""
+        response = input(f"敏感操作: {message}\n确认? (Y/N): ")
         return response.upper() == "Y"
 
     @staticmethod
     def _default_takeover(message: str) -> None:
-        """Default takeover callback using console input."""
-        input(f"{message}\nPress Enter after completing manual operation...")
+        """默认接管回调(使用控制台输入)"""
+        input(f"{message}\n完成手动操作后按Enter...")
 
 
 def parse_action(response: str) -> dict[str, Any]:
     """
-    Parse action from model response using AST (safe alternative to eval).
+    从模型响应中解析动作(使用AST - eval的安全替代方案)
 
     Args:
-        response: Raw response string from the model.
+        response: 来自模型的原始响应字符串
 
     Returns:
-        Parsed action dictionary.
+        解析后的动作字典
 
     Raises:
-        ValueError: If the response cannot be parsed.
-    
-    Security:
-        Uses AST parsing instead of eval() to prevent code injection attacks.
+        ValueError: 当响应无法解析时
+
+    Note:
+        使用AST解析而非eval()以防止代码注入攻击
     """
     import ast
     import re
@@ -285,33 +342,33 @@ def parse_action(response: str) -> dict[str, Any]:
     response = response.strip()
     
     try:
-        # Method 1: AST parsing (safest)
+        # 方法1: AST解析(最安全)
         tree = ast.parse(response, mode='eval')
         
         if not isinstance(tree.body, ast.Call):
-            raise ValueError("Response must be a function call")
+            raise ValueError("响应必须是函数调用")
         
         func_name = tree.body.func.id if isinstance(tree.body.func, ast.Name) else None
         
         if func_name not in ['do', 'finish']:
-            raise ValueError(f"Unknown function: {func_name}")
+            raise ValueError(f"未知函数: {func_name}")
         
-        # Extract arguments safely
+        # 安全提取参数
         args = {}
         for keyword in tree.body.keywords:
             arg_name = keyword.arg
-            # Use literal_eval to safely evaluate the value
+            # 使用literal_eval安全地求值
             try:
                 arg_value = ast.literal_eval(keyword.value)
             except (ValueError, SyntaxError):
-                # If literal_eval fails, try to get the value as string
+                # 如果literal_eval失败,尝试作为字符串获取值
                 if isinstance(keyword.value, ast.Constant):
                     arg_value = keyword.value.value
                 elif isinstance(keyword.value, ast.List):
-                    # Handle list literals like [x, y]
+                    # 处理列表字面量,如[x, y]
                     arg_value = [ast.literal_eval(el) for el in keyword.value.elts]
                 else:
-                    raise ValueError(f"Cannot parse argument: {arg_name}")
+                    raise ValueError(f"无法解析参数: {arg_name}")
             
             args[arg_name] = arg_value
         
@@ -319,37 +376,37 @@ def parse_action(response: str) -> dict[str, Any]:
         return args
         
     except Exception as e:
-        # Fallback to regex parsing for simple cases
+        # 降级到正则表达式解析(简单情况)
         try:
             return _parse_action_with_regex(response)
         except Exception as fallback_error:
-            raise ValueError(f"Failed to parse action. AST error: {e}, Regex error: {fallback_error}")
+            raise ValueError(f"解析动作失败. AST错误: {e}, 正则表达式错误: {fallback_error}")
 
 
 def _parse_action_with_regex(response: str) -> dict[str, Any]:
     """
-    Fallback regex-based parser for simple action strings.
+    基于正则表达式的降级解析器(用于简单动作字符串)
     
     Args:
-        response: Raw response string from the model.
+        response: 来自模型的原始响应字符串
     
     Returns:
-        Parsed action dictionary.
+        解析后的动作字典
     """
     import re
     
-    # Match do(...) or finish(...)
+    # 匹配do(...)或finish(...)
     func_match = re.match(r'^(do|finish)\((.*)\)$', response, re.DOTALL)
     if not func_match:
-        raise ValueError(f"Invalid action format: {response}")
+        raise ValueError(f"无效的动作格式: {response}")
     
     func_name = func_match.group(1)
     args_str = func_match.group(2)
     
-    # Parse key=value pairs
+    # 解析key=value对
     args = {}
     
-    # Handle special patterns
+    # 处理特殊模式
     if func_name == "finish":
         # finish(message="xxx")
         message_match = re.search(r'message\s*=\s*["\'](.+?)["\']', args_str)
@@ -402,12 +459,12 @@ def _parse_action_with_regex(response: str) -> dict[str, Any]:
 
 
 def do(**kwargs) -> dict[str, Any]:
-    """Helper function for creating 'do' actions."""
+    """创建'do'动作的辅助函数"""
     kwargs["_metadata"] = "do"
     return kwargs
 
 
 def finish(**kwargs) -> dict[str, Any]:
-    """Helper function for creating 'finish' actions."""
+    """创建'finish'动作的辅助函数（已废弃，仅作容错）"""
     kwargs["_metadata"] = "finish"
     return kwargs

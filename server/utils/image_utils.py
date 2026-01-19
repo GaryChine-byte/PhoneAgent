@@ -1,3 +1,7 @@
+#!/usr/bin/env python3
+# Copyright (C) 2025 PhoneAgent Contributors
+# Licensed under AGPL-3.0
+
 """
 图片处理工具 - 截图压缩优化
 
@@ -6,9 +10,7 @@
 - 前端展示用：640x360, JPEG 75%
 
 性能优化：
-- ✅ 异步压缩（不阻塞主线程）
-- ✅ 批量处理（多级别并行）
-"""
+- 异步压缩（不阻塞主线程） - 批量处理（多级别并行） """
 
 import os
 import logging
@@ -21,6 +23,44 @@ logger = logging.getLogger(__name__)
 
 # 线程池（用于图片处理）
 _image_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="image-worker")
+
+
+def _safe_open_image(path: str, max_retries: int = 3, retry_delay: float = 0.2) -> Image.Image:
+    """
+    安全打开图片，处理文件截断问题
+    
+    Args:
+        path: 图片路径
+        max_retries: 最大重试次数
+        retry_delay: 重试延迟（秒）
+    
+    Returns:
+        PIL Image对象
+    
+    Raises:
+        IOError: 多次重试后仍然失败
+    """
+    import time
+    from PIL import UnidentifiedImageError
+    
+    last_error = None
+    for attempt in range(max_retries):
+        try:
+            return Image.open(path)
+        except (UnidentifiedImageError, OSError) as e:
+            error_msg = str(e).lower()
+            if "truncated" in error_msg or "cannot identify image file" in error_msg:
+                last_error = e
+                if attempt < max_retries - 1:
+                    logger.warning(f"图片读取失败（{error_msg[:50]}...），重试 {attempt + 1}/{max_retries}")
+                    time.sleep(retry_delay)
+                    continue
+            # 其他错误直接抛出
+            raise
+    
+    # 所有重试都失败
+    logger.error(f"图片读取失败，已重试 {max_retries} 次: {path}")
+    raise IOError(f"Failed to open image after {max_retries} retries: {last_error}")
 
 
 class ImageCompressor:
@@ -82,8 +122,19 @@ class ImageCompressor:
                 base, ext = os.path.splitext(input_path)
                 output_path = f"{base}{config['suffix']}.jpg"
             
-            # 打开并压缩图片
-            with Image.open(input_path) as img:
+            # 验证输入文件
+            if not os.path.exists(input_path):
+                raise FileNotFoundError(f"Input file not found: {input_path}")
+            
+            file_size = os.path.getsize(input_path)
+            if file_size < 100:
+                raise ValueError(f"File too small ({file_size} bytes), likely corrupted")
+            
+            logger.debug(f"Compressing image: {input_path} ({file_size} bytes)")
+            
+            # 打开并压缩图片（带重试机制，处理文件截断）
+            img = _safe_open_image(input_path)
+            with img:
                 # 转换为RGB（处理RGBA等格式）
                 if img.mode in ('RGBA', 'LA', 'P'):
                     # 创建白色背景
@@ -223,8 +274,7 @@ async def compress_screenshot_async(
     for_ai: bool = True
 ) -> dict:
     """
-    ✅ 异步压缩截图（推荐使用）
-    
+ 异步压缩截图（推荐使用）     
     Args:
         screenshot_path: 截图路径
         output_dir: 输出目录
@@ -257,8 +307,7 @@ async def compress_image_async(
     level: str = "medium"
 ) -> str:
     """
-    ✅ 异步压缩单张图片
-    
+ 异步压缩单张图片     
     Args:
         input_path: 输入图片路径
         output_path: 输出图片路径
@@ -282,7 +331,7 @@ async def compress_image_async(
 __all__ = [
     "ImageCompressor", 
     "compress_screenshot",
-    "compress_screenshot_async",  # ✅ 新增: 异步版本
-    "compress_image_async"  # ✅ 新增: 异步版本
+    "compress_screenshot_async",  # 新增: 异步版本
+    "compress_image_async"  # 新增: 异步版本
 ]
 

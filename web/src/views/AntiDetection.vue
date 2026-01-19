@@ -82,8 +82,7 @@
 
               <el-form-item label="坐标随机化">
                 <el-switch v-model="config.enable_position_random" />
-                <div class="help-text">⚠️ 点击坐标随机偏移（可能影响准确性，建议关闭）</div>
-              </el-form-item>
+ <div class="help-text"> 点击坐标随机偏移（可能影响准确性，建议关闭）</div>               </el-form-item>
 
               <el-form-item label="贝塞尔曲线滑动">
                 <el-switch v-model="config.enable_bezier_swipe" />
@@ -188,8 +187,7 @@
             </el-form>
           </el-collapse-item>
 
-          <el-collapse-item title="📈 贝塞尔曲线配置" name="bezier">
-            <el-form label-width="180px">
+ <el-collapse-item title=" 贝塞尔曲线配置" name="bezier">             <el-form label-width="180px">
               <el-form-item label="曲线分段数">
                 <el-input-number 
                   v-model="config.bezier_steps" 
@@ -260,8 +258,7 @@
             </el-form>
           </el-collapse-item>
 
-          <el-collapse-item title="🔍 探索行为配置" name="exploration">
-            <el-form label-width="180px">
+ <el-collapse-item title=" 探索行为配置" name="exploration">             <el-form label-width="180px">
               <el-form-item label="探索概率">
                 <el-slider 
                   v-model="explorationPercentage" 

@@ -1,3 +1,7 @@
+#!/usr/bin/env python3
+# Copyright (C) 2025 PhoneAgent Contributors
+# Licensed under AGPL-3.0
+
 """
 任务相关的 API 数据模型
 """
@@ -17,10 +21,10 @@ class CreateTaskRequest(BaseModel):
     ai_api_key: Optional[str] = Field(None, description="AI模型API密钥（可选，使用环境变量）")
     max_steps: Optional[int] = Field(None, description="最大步骤数（默认从环境变量获取）")
     prompt_card_ids: Optional[List[int]] = Field(None, description="提示词卡片ID列表")
-    # ⚠️ 已废弃：kernel_mode（保留字段用于API兼容，但不再使用）
+    # 内核模式选择：auto（推荐）、xml（快速）、vision（兜底）
     kernel_mode: Optional[str] = Field(
-        default="vision",
-        description="[已废弃] 执行内核模式：统一使用vision内核，不再支持xml/auto"
+        default="auto",
+        description="执行内核模式：auto（XML优先，失败切换Vision）、xml（纯XML）、vision（纯Vision）"
     )
 
 
@@ -36,7 +40,8 @@ class TaskResponse(BaseModel):
     duration: Optional[float]
     result: Optional[str]
     error: Optional[str]
-    steps: list = []  # ✅ 修复：改为list类型，返回完整步骤详情
+    # 修复：改为list类型，返回完整步骤详情
+    steps: list = []
     # Token统计
     total_tokens: int = 0
     total_prompt_tokens: int = 0

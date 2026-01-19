@@ -1,3 +1,7 @@
+#!/usr/bin/env python3
+# Copyright (C) 2025 PhoneAgent Contributors
+# Licensed under AGPL-3.0
+
 """
 规划模式 API - 智能任务规划与执行
 
@@ -16,12 +20,10 @@ from pydantic import BaseModel, Field
 
 from server.services import get_agent_service
 from server.services.agent_service import TaskStatus
-from server.websocket.connection_manager import get_connection_manager
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/planning", tags=["🎯 智能规划"])
-
+router = APIRouter(prefix="/planning", tags=[" 智能规划"]) 
 
 class ModelConfig(BaseModel):
     """模型配置"""
@@ -39,7 +41,7 @@ class GeneratePlanRequest(BaseModel):
     """生成计划请求"""
     instruction: str = Field(..., description="任务指令")
     device_id: Optional[str] = Field(None, description="设备ID")
-    # ✅ model_settings 完全可选，不设置时由后端环境变量控制
+    # model_settings 完全可选，不设置时由后端环境变量控制
     model_settings: Optional[ModelConfig] = Field(None, alias="model_config", description="模型配置（可选，留空使用环境变量）")
     prompt_cards: Optional[List[str]] = Field(default=[], description="提示词卡片名称列表")
     
@@ -60,7 +62,7 @@ class ExecuteDirectRequest(BaseModel):
     """直接执行请求（生成+执行）"""
     instruction: str = Field(..., description="任务指令")
     device_id: Optional[str] = Field(None, description="设备ID")
-    # ✅ model_settings 完全可选，不设置时由后端环境变量控制
+    # model_settings 完全可选，不设置时由后端环境变量控制
     model_settings: Optional[Dict[str, Any]] = Field(None, alias="model_config", description="模型配置（可选，留空使用环境变量）")
     prompt_cards: Optional[List[str]] = Field(default=[], description="提示词卡片名称列表")
     use_smart_positioning: bool = Field(
@@ -96,7 +98,7 @@ async def generate_plan(request: GeneratePlanRequest):
         else:
             model_config_dict = {}
         
-        # ✅ 优先使用用户指定配置，否则从环境变量获取
+        # 优先使用用户指定配置，否则从环境变量获取
         if model_config_dict:
             # 用户指定了配置
             model_name = model_config_dict.get("model_name")
@@ -112,9 +114,9 @@ async def generate_plan(request: GeneratePlanRequest):
                 base_url = base_url or env_config["base_url"]
                 api_key = api_key or env_config["api_key"]
                 
-                logger.info(f"📝 部分配置来自环境变量")
+                logger.info(f"部分配置来自环境变量")
             else:
-                logger.info(f"🎯 使用用户指定配置")
+                logger.info(f"使用用户指定配置")
         else:
             # 完全使用环境变量配置
             from server.utils.model_config_helper import get_model_config_from_env
@@ -124,7 +126,7 @@ async def generate_plan(request: GeneratePlanRequest):
             base_url = env_config["base_url"]
             api_key = env_config["api_key"]
             
-            logger.info(f"🌍 使用环境变量配置 (MODEL_PROVIDER={config.MODEL_PROVIDER})")
+        logger.info(f"使用环境变量配置 (MODEL_PROVIDER={config.MODEL_PROVIDER})")
         
         model_config = PhoneAgentModelConfig(
             base_url=base_url,
@@ -132,8 +134,8 @@ async def generate_plan(request: GeneratePlanRequest):
             model_name=model_name,
         )
         
-        # ✅ 详细日志
-        logger.info(f"📡 规划模式配置:")
+        # 详细日志
+        logger.info(f"规划模式配置:")
         logger.info(f"   base_url: {base_url}")
         logger.info(f"   model_name: {model_name}")
         logger.info(f"   api_key: {'***' + api_key[-8:] if len(api_key) > 8 else '(未配置)'}")
@@ -184,7 +186,7 @@ async def execute_plan(request: ExecutePlanRequest):
         from phone_agent.planning import TaskPlan
         plan = TaskPlan.from_dict(request.plan)
         
-        # 🆕 通过 AgentService 创建任务
+        # 通过 AgentService 创建任务
         agent_service = get_agent_service()
         task_id = await agent_service.create_task(
             instruction=plan.instruction,
@@ -192,7 +194,7 @@ async def execute_plan(request: ExecutePlanRequest):
             model_config=None  # 规划模式已经有计划，不需要模型配置
         )
         
-        # 🆕 将计划数据附加到任务
+        # 将计划数据附加到任务
         task = agent_service.get_task(task_id)
         if task:
             task.kernel_mode = "planning"  # 标记为规划模式
@@ -319,7 +321,7 @@ async def execute_direct(request: ExecuteDirectRequest):
         else:
             model_config_dict = {}
         
-        # ✅ 优先使用用户指定配置，否则从环境变量获取
+        # 优先使用用户指定配置，否则从环境变量获取
         if model_config_dict:
             # 用户指定了配置
             model_name = model_config_dict.get("model_name")
@@ -335,9 +337,9 @@ async def execute_direct(request: ExecuteDirectRequest):
                 base_url = base_url or env_config["base_url"]
                 api_key = api_key or env_config["api_key"]
                 
-                logger.info(f"📝 部分配置来自环境变量")
+                logger.info(f"部分配置来自环境变量")
             else:
-                logger.info(f"🎯 使用用户指定配置")
+                logger.info(f"使用用户指定配置")
         else:
             # 完全使用环境变量配置
             from server.utils.model_config_helper import get_model_config_from_env
@@ -347,7 +349,7 @@ async def execute_direct(request: ExecuteDirectRequest):
             base_url = env_config["base_url"]
             api_key = env_config["api_key"]
             
-            logger.info(f"🌍 使用环境变量配置 (MODEL_PROVIDER={config.MODEL_PROVIDER})")
+        logger.info(f"使用环境变量配置 (MODEL_PROVIDER={config.MODEL_PROVIDER})")
         
         model_config = PhoneAgentModelConfig(
             base_url=base_url,
@@ -355,8 +357,8 @@ async def execute_direct(request: ExecuteDirectRequest):
             model_name=model_name,
         )
         
-        # ✅ 详细日志
-        logger.info(f"📡 规划模式配置:")
+        # 详细日志
+        logger.info(f"规划模式配置:")
         logger.info(f"   base_url: {base_url}")
         logger.info(f"   model_name: {model_name}")
         logger.info(f"   api_key: {'***' + api_key[-8:] if len(api_key) > 8 else '(未配置)'}")
@@ -397,7 +399,7 @@ async def execute_direct(request: ExecuteDirectRequest):
         
         logger.info(f"Generated plan with {len(plan.steps)} steps, executing...")
         
-        # 🆕 通过 AgentService 创建任务
+        # 通过 AgentService 创建任务
         agent_service = get_agent_service()
         task_id = await agent_service.create_task(
             instruction=plan.instruction,

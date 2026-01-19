@@ -35,13 +35,16 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     # 启动时
-    logger.info("🚀 Starting PhoneAgent API Server...")
-    
+    logger.info(" Starting PhoneAgent API Server...")     
     # 初始化数据库
     from server.database import init_database
     init_database()
-    logger.info("✅ Database initialized")
-    
+    logger.info(" Database initialized")     
+    # 【重要】清理残留的 ADB 连接和端口（服务器重启后）
+    from server.services.port_manager import get_port_manager
+    port_manager = get_port_manager()
+    await port_manager.cleanup_all_adb_connections()
+    logger.info(" ADB connections cleaned up")     
     # 初始化设备池
     config = Config()
     device_pool = get_device_pool(max_devices=config.MAX_DEVICES)
@@ -53,30 +56,29 @@ async def lifespan(app: FastAPI):
     from server.services.device_scanner import get_device_scanner
     scanner = get_device_scanner()
     await scanner.start()
-    logger.info("✅ Device scanner started")
+    logger.info("设备扫描器已启动")
     
-    # ✅ 启动截图和日志清理服务
+    # 启动截图和日志清理服务
     from server.tasks.cleanup import start_cleanup_service
     await start_cleanup_service()
-    logger.info("✅ Cleanup service started")
-    
+    logger.info("清理服务已启动")     
     # 初始化App配置管理器（懒加载，首次调用时才真正加载）
     from phone_agent.config.app_manager import get_app_manager
     try:
         manager = get_app_manager()
         stats = manager.get_stats()
-        logger.info(f"✅ App config manager initialized: {stats['total']} apps ({stats['enabled']} enabled)")
+        logger.info(f"App config manager initialized: {stats['total']} apps ({stats['enabled']} enabled)")
     except Exception as e:
-        logger.warning(f"⚠️  Failed to initialize app config manager: {e}")
+        logger.warning(f"Failed to initialize app config manager: {e}")
     
-    # ✅ 设置WebSocket广播回调给AgentService（关键修复）
-    from server.websocket.connection_manager import get_connection_manager
-    ws_manager = get_connection_manager()
+    # 设置WebSocket广播回调给AgentService（关键修复）
+    from server.websocket.server import get_device_manager
+    ws_manager = get_device_manager()
     agent_service = get_agent_service()
     agent_service.set_websocket_broadcast_callback(ws_manager.broadcast)
-    logger.info("✅ WebSocket broadcast callback set for AgentService")
+    logger.info("WebSocket广播回调已设置")
     
-    # ✅ 启动后台状态广播任务
+    # 启动后台状态广播任务
     import asyncio
     async def broadcast_status_updates():
         """定期广播状态更新"""
@@ -101,10 +103,8 @@ async def lifespan(app: FastAPI):
     
     # 启动后台任务
     broadcast_task = asyncio.create_task(broadcast_status_updates())
-    logger.info("✅ Background status broadcast task started")
-    
-    logger.info(f"✅ PhoneAgent API Server started (max_devices={config.MAX_DEVICES})")
-    
+    logger.info("Background status broadcast task started")
+    logger.info(f"PhoneAgent API Server started (max_devices={config.MAX_DEVICES})")
     yield
     
     # 关闭时取消后台任务
@@ -121,7 +121,7 @@ async def lifespan(app: FastAPI):
     # 【新增】停止设备扫描器
     await scanner.stop()
     
-    logger.info("✅ PhoneAgent API Server stopped")
+    logger.info(" PhoneAgent API Server stopped")
 
 
 def create_app() -> FastAPI:
@@ -165,6 +165,10 @@ def create_app() -> FastAPI:
     # 注册应用配置管理路由
     from server.api.app_config_routes import router as app_config_router
     app.include_router(app_config_router, prefix="/api/v1")
+    
+    # 新增：注册截图API路由
+    from server.api.screenshot import router as screenshot_router
+    app.include_router(screenshot_router)
     
     # 健康检查端点
     @app.get("/health")

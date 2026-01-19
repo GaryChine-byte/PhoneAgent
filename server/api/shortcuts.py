@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (C) 2025 PhoneAgent Contributors
+# Licensed under AGPL-3.0
+
 """
 快捷指令管理API
 支持预置指令和用户自定义指令
@@ -18,7 +21,7 @@ router = APIRouter()
 # 配置文件路径
 SHORTCUTS_FILE = "data/shortcuts.json"
 
-# ✅ 内存缓存（避免每次都读取文件）
+# 内存缓存（避免每次都读取文件）
 _shortcuts_cache = None
 _cache_timestamp = 0
 CACHE_TTL = 60  # 缓存60秒
@@ -71,7 +74,7 @@ def load_shortcuts(force_reload: bool = False) -> List[Shortcut]:
     global _shortcuts_cache, _cache_timestamp
     import time
     
-    # ✅ 检查缓存
+    # 检查缓存
     if not force_reload and _shortcuts_cache is not None:
         if time.time() - _cache_timestamp < CACHE_TTL:
             return _shortcuts_cache
@@ -89,7 +92,7 @@ def load_shortcuts(force_reload: bool = False) -> List[Shortcut]:
             logger.warning(f"Failed to load shortcuts from {SHORTCUTS_FILE}: {e}")
             shortcuts = initialize_shortcuts()
     
-    # ✅ 更新缓存
+    # 更新缓存
     _shortcuts_cache = shortcuts
     _cache_timestamp = time.time()
     
@@ -105,7 +108,7 @@ def save_shortcuts(shortcuts: List[Shortcut]):
     with open(SHORTCUTS_FILE, 'w', encoding='utf-8') as f:
         json.dump([s.model_dump() for s in shortcuts], f, ensure_ascii=False, indent=2)
     
-    # ✅ 更新缓存
+    # 更新缓存
     _shortcuts_cache = shortcuts
     _cache_timestamp = time.time()
 

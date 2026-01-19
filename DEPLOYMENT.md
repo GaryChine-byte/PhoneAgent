@@ -6,7 +6,23 @@
 
 ## ⚠️ 重要提示
 
-**首次部署必须执行 ADB TCP 配置**，否则设备会显示为 `offline` 无法使用！详细步骤请查看简单模式中的步骤2。
+**首次部署必须先完成 ADB TCP/IP 配置**，否则设备会显示为 `offline` 无法使用！
+
+### 快速配置（必须在客户端安装前完成）
+
+```bash
+# 1. 手机通过 USB 连接到电脑
+# 2. 在电脑上执行
+adb tcpip 5555
+
+# 3. 拔掉 USB 线
+# 4. 然后在手机 Termux 中运行安装脚本
+```
+
+**为什么必须这样做？**
+- Android 系统限制：非 Root 设备无法在本地启用 ADB TCP/IP
+- 必须通过 USB 连接电脑执行 `adb tcpip 5555`
+- 手机重启后需要重新执行此步骤
 
 ---
 
@@ -71,8 +87,8 @@ sudo ufw enable
 
 ### Android 设备
 
-- Android 7.0+，USB 调试已开启
-- 已安装 Termux（从 [F-Droid](https://f-droid.org/packages/com.termux/) 下载）
+- Android 5.0+，USB 调试已开启
+- 已下载 PhoneAgent Remote APK（从 [Releases 页面](https://github.com/tmwgsicp/PhoneAgent/releases/latest) 下载）
 
 ---
 
@@ -107,121 +123,84 @@ sudo bash scripts/install/install_server.sh
 curl http://localhost:8000/health  # 应返回 {"status": "ok"}
 ```
 
-### 步骤2：客户端（3分钟）
+### 步骤2：前置配置 ADB TCP/IP（必须）⚠️
 
-在 Android 手机的 Termux 中运行：
+**在运行客户端安装脚本之前，必须先完成此步骤！**
 
 ```bash
-# 使用官方源（需要VPN）
-bash <(curl -s https://raw.githubusercontent.com/tmwgsicp/PhoneAgent/main/client/install_termux.sh)
+# 1. 手机通过 USB 数据线连接到电脑
+# 2. 在电脑上执行
+adb tcpip 5555
 
-# 使用国内CDN（推荐）
-bash <(curl -s https://cdn.jsdelivr.net/gh/tmwgsicp/PhoneAgent@main/client/install_termux.sh)
-
-# 使用国内镜像
-bash <(curl -s https://mirror.ghproxy.com/https://raw.githubusercontent.com/tmwgsicp/PhoneAgent/main/client/install_termux.sh)
+# 3. 拔掉 USB 线
 ```
 
-**安装过程会提示输入**（4 个必填参数）：
+**说明**：
+- 这个配置会在**手机重启后失效**，需要重新执行
+- Android 11+ 可以在"开发者选项 > 无线调试"中直接启用，无需 USB
 
-1. **后端服务器 IP**
-   - 填写后端服务器的公网 IP
-   - 示例：`1.2.3.4`
+### 步骤3：客户端安装（3分钟）
 
-2. **FRP Token**
-   - ⚠️ **必须与服务端输入的 Token 完全一致**
-   - 示例：`my_secure_token_123`
+**下载并安装 PhoneAgent Remote APK**：
 
-3. **WebSocket 连接方式**
-   - `1` = 直连IP（推荐：前后端同服务器）
-   - `2` = 域名代理（推荐：需要HTTPS或语音功能）
+前往 [Releases 页面](https://github.com/tmwgsicp/PhoneAgent/releases/latest) 下载最新版本：
 
-4. **前端访问地址**
-   - 选择 `1=直连IP`：输入前端服务器IP（通常与后端相同）
-   - 选择 `2=域名代理`：输入域名（如 `phoneagent.example.com`）
+- 📦 **文件名**：`PhoneAgent-Remote-v1.0.0.apk`
+- 📏 **大小**：约 70 MB
+- 🏗️ **架构**：ARM64 + ARMv7（通用版）
+- 📱 **系统要求**：Android 5.0+
 
-**其他参数（可选，自动配置）**：
+**安装方式**：
 
-4. **设备名称**
-   - 脚本会自动生成（如 `Redmi_K50_1234`）
-   - 也可手动输入自定义名称
+```bash
+# 方式一：通过 ADB 安装
+adb install PhoneAgent-Remote-v1.0.0.apk
 
-5. **FRP 端口分配**
-   - 推荐选择 `1=自动分配`（智能检测可用端口）
-   - 也可选择 `2=手动指定`（6100-6199 范围）
+# 方式二：直接在手机上打开 APK 文件安装
+```
+
+**配置应用**（在 Android 设备上）：
+
+打开 PhoneAgent Remote 应用，填写以下配置信息：
+
+| 配置项 | 说明 | 填写示例 |
+|--------|------|----------|
+| **后端服务器 IP** | PhoneAgent 服务器的 IP 地址 | `1.2.3.4` |
+| **FRP Token** | ⚠️ 必须与服务端输入的 Token 完全一致 | `my_secure_token_123` |
+| **FRP 远程端口** | FRP 分配的唯一端口 | `6100`、`6101` 等 |
+| **WebSocket 连接方式** | 选择连接模式 | 推荐选择"直连 IP 模式" |
+| **域名地址**（可选） | 仅域名代理模式需要 | `phoneagent.example.com` |
+| **设备名称**（可选） | 给设备起个名字 | 留空自动生成 |
+
+**WebSocket 连接方式说明**：
+- **直连 IP 模式**（推荐）：直接连接服务器 9999 端口，适合内网环境、开发测试
+- **域名代理模式**：通过域名 + Nginx 反向代理连接，适合生产环境、需要 SSL 加密
 
 **⚠️ FRP Token 认证说明**：
 - 服务端和客户端使用 FRP Token 进行双向认证
 - Token 不匹配会导致客户端连接失败
-- Token 存储在 `~/frp/frpc.ini`（客户端）和 `frp/frps.ini`（服务端）
 
-**验证**：
-```bash
-bash ~/check_status.sh  # 查看服务状态
-```
+点击"保存并启动"。
 
-**预期输出**：
-```
-✅ ADB: 运行中
-✅ FRP: 运行中
-✅ WebSocket: 运行中
-```
+**验证连接**：
 
----
+1. 在应用内查看服务状态：
+   - FRP 连接状态应显示"已连接"
+   - WebSocket 状态应显示"已连接"
+   - ADB 状态应显示"已连接"
 
-### ⚠️ 关键步骤：ADB TCP 连接配置（必须执行）
+2. 在 PhoneAgent 服务端查看设备是否在线：
+   - 打开 Web 管理界面
+   - 进入"设备管理"页面
+   - 设备状态应显示为"在线"
 
-**问题**：此时虽然服务已启动，但**设备在服务端会显示为 `offline` 状态**，无法正常使用。
-
-**原因**：Android 系统的 ADB 守护进程（`adbd`）默认不监听 TCP 端口，需要手动开启。
-
-#### 方法1：通过USB连接电脑（推荐 ⭐）
-
-**步骤**：
-1. 用 USB 数据线连接手机到电脑
-2. 在电脑上执行：
-   ```bash
-   adb tcpip 5555
-   ```
-3. 拔掉 USB 线，手机通过 FRP 隧道连接
-
-**优点**：简单可靠，适合首次配置
-
-#### 方法2：使用无线调试（Android 11+）
-
-**步骤**：
-1. 打开手机设置 → 开发者选项 → 无线调试
-2. 点击"使用配对码配对设备"，记下 IP 和端口
-3. 在 Termux 中执行：
-   ```bash
-   adb pair <IP>:<端口>  # 输入配对码
-   adb connect localhost:5555
-   ```
-
-**优点**：无需电脑，但需要 Android 11+
-
-
-#### 验证连接
-
-在服务端执行：
-```bash
-adb devices -l
-```
-
-**正常输出**（应显示 `device` 而非 `offline`）：
-```
-List of devices attached
-localhost:6100    device product:mars model:M2102K1AC device:mars transport_id:1
-```
-
-如果显示 `offline`，请检查：
-1. 是否执行了 `adb tcpip 5555`
-2. FRP 隧道是否正常（检查 `~/frp/frpc.log`）
-3. 手机是否重启过（重启后需重新执行 `adb tcpip 5555`）
+**如果显示 `offline`**：
+- 说明步骤2的 ADB TCP/IP 配置未完成或失效
+- 请重新执行步骤2的配置
 
 ---
 
-### 步骤3：前端（2分钟）
+### 步骤4：前端（2分钟）
 
 在服务器上：
 
@@ -303,24 +282,55 @@ sudo bash scripts/install/install_server.sh
 
 **安装时需要手动设置 FRP Token**，请记住您输入的 Token，客户端部署时需要使用相同的 Token。
 
-### 步骤2：客户端部署
+### 步骤2：前置配置 ADB TCP/IP（必须）⚠️
+
+**在安装客户端之前，必须先完成此步骤！**
 
 ```bash
-# 使用官方源（需要VPN）
-bash <(curl -s https://raw.githubusercontent.com/tmwgsicp/PhoneAgent/main/client/install_termux.sh)
+# 1. 手机通过 USB 数据线连接到电脑
+# 2. 在电脑上执行
+adb tcpip 5555
 
-# 使用国内CDN（推荐）
-bash <(curl -s https://cdn.jsdelivr.net/gh/tmwgsicp/PhoneAgent@main/client/install_termux.sh)
-
-# 使用国内镜像
-bash <(curl -s https://mirror.ghproxy.com/https://raw.githubusercontent.com/tmwgsicp/PhoneAgent/main/client/install_termux.sh)
+# 3. 拔掉 USB 线
 ```
 
-**必填参数**：
-- 服务器 IP
-- FRP Token（与服务端输入的一致）
+**说明**：
+- 这个配置会在**手机重启后失效**，需要重新执行
+- Android 11+ 可以在"开发者选项 > 无线调试"中直接启用，无需 USB
 
-**选择连接方式**：建议选择 `2=域名代理`（支持 HTTPS + 语音功能）
+### 步骤3：客户端部署
+
+**下载并安装 PhoneAgent Remote APK**：
+
+前往 [Releases 页面](https://github.com/tmwgsicp/PhoneAgent/releases/latest) 下载最新版本：
+
+- 📦 **文件名**：`PhoneAgent-Remote-v1.0.0.apk`
+- 📏 **大小**：约 70 MB
+- 🏗️ **架构**：ARM64 + ARMv7（通用版）
+- 📱 **系统要求**：Android 5.0+
+
+**安装应用**：
+
+```bash
+# 通过 ADB 安装
+adb install PhoneAgent-Remote-v1.0.0.apk
+
+# 或直接在手机上打开 APK 文件安装
+```
+
+**配置应用**：
+
+打开应用，填写配置信息：
+
+| 配置项 | 说明 | 填写示例 |
+|--------|------|----------|
+| **后端服务器 IP** | PhoneAgent 服务器的 IP 地址 | 填写你的服务器 IP |
+| **FRP Token** | 与服务端输入的一致 | 填写你的 token |
+| **FRP 远程端口** | 每台设备使用唯一端口 | `6100`、`6101` 等 |
+| **WebSocket 连接方式** | 建议选择"域名代理模式" | 域名代理模式 |
+| **域名地址** | 填写你的域名 | `your-domain.com` |
+
+点击"保存并启动"。
 
 **⚠️ 客户端部署完成后，务必执行 ADB TCP 连接配置**（参见简单模式步骤2）
 
@@ -437,22 +447,15 @@ location / {
 
 如果需要从直连IP模式切换到域名代理模式：
 
-```bash
-# 在 Termux 中
-nano ~/start_all.sh
-
-# 找到 WS_URL 行，修改为域名模式：
-# 原来：WS_URL="ws://SERVER_IP:9999/ws/device/6100"
-# 修改为（注意端口号要与你的 FRP 端口一致）：
-WS_URL="wss://your-domain.com/device-ws/device/6100"
-
-# 重启
-bash ~/stop_all.sh && bash ~/start_all.sh
-```
+1. 打开 PhoneAgent Remote 应用
+2. 在配置界面修改以下内容：
+   - **WebSocket 连接方式**：切换到"域名代理模式"
+   - **域名地址**：填写你的域名（如 `your-domain.com`）
+3. 点击"保存并启动"
 
 **重要提示**：
-- `/ws/device/` 后面的数字是 **FRP 端口**（如 6100, 6101 等），不是设备名称
-- 端口号必须与 `~/frp/frpc.ini` 中的 `remote_port` 一致
+- WebSocket URL 格式：`wss://your-domain.com/device-ws/device/{FRP端口}`
+- `/device/` 后面的数字是 **FRP 远程端口**（如 6100, 6101 等），不是设备名称
 - 每台设备使用不同的端口：第一台用 6100，第二台用 6101，依次递增
 
 **访问**：`https://your-domain.com`
@@ -533,19 +536,28 @@ ps aux | grep -E 'uvicorn|frps'
 
 ### 客户端连接失败
 
-```bash
-# 在 Termux 中测试网络
-ping YOUR_SERVER_IP
+**检查步骤**：
 
-# 检查 FRP 配置
-cat ~/frp/frpc.ini | grep -E 'server_addr|server_port|token'
+1. **查看应用日志**：
+   - 打开 PhoneAgent Remote 应用
+   - 点击"查看日志"按钮
+   - 查看 FRP 和 WebSocket 连接日志
 
-# 查看 FRP 日志
-tail -50 ~/frp/frpc.log
+2. **通过 ADB 查看系统日志**：
+   ```bash
+   adb logcat | grep -E "PhoneAgent|FrpManager|WebSocketManager"
+   ```
 
-# 查看 WebSocket 日志
-tail -50 ~/ws_client_simple.log
-```
+3. **检查网络连接**：
+   - 确认手机能访问服务器 IP
+   - 检查防火墙是否开放了必要的端口
+   - 确认 FRP Token 配置正确
+
+4. **验证 ADB TCP/IP**：
+   ```bash
+   # 在电脑上执行
+   adb tcpip 5555
+   ```
 
 ### 前端无法访问
 
@@ -612,12 +624,19 @@ tail -f logs/frps.log           # FRP 日志
 
 ### 客户端
 
+**通过应用界面**：
+- 打开 PhoneAgent Remote 应用
+- 点击"启动服务"/"停止服务"按钮
+- 点击"查看日志"查看运行日志
+- 查看状态指示器（FRP、WebSocket、ADB）
+
+**通过 ADB 命令**：
 ```bash
-bash ~/start_all.sh             # 启动
-bash ~/stop_all.sh              # 停止
-bash ~/check_status.sh          # 状态
-tail -f ~/ws_client_simple.log  # WebSocket 日志
-tail -f ~/frp/frpc.log          # FRP 日志
+# 查看应用日志
+adb logcat | grep -E "PhoneAgent|FrpManager|WebSocketManager"
+
+# 检查服务状态
+adb shell ps | grep phoneagent
 ```
 
 ### Nginx

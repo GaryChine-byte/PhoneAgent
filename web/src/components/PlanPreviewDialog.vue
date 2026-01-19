@@ -1,8 +1,7 @@
 <template>
   <el-dialog
     v-model="visible"
-    title="📋 任务执行计划预览"
-    width="90%"
+ title=" 任务执行计划预览"     width="90%"
     :fullscreen="isMobile"
     :close-on-click-modal="false"
     @close="handleClose"
@@ -11,8 +10,7 @@
       <!-- Tab选项卡 -->
       <el-tabs v-model="activeTab" type="card" class="plan-tabs">
         <!-- 计划概览 Tab -->
-        <el-tab-pane label="📊 计划概览" name="overview">
-          <el-card class="plan-overview-card" shadow="never">
+ <el-tab-pane label=" 计划概览" name="overview">           <el-card class="plan-overview-card" shadow="never">
             <el-descriptions :column="2" border>
               <el-descriptions-item label="任务指令">
                 {{ plan.instruction }}
@@ -48,8 +46,7 @@
         <!-- 执行步骤 Tab -->
         <el-tab-pane name="steps">
           <template #label>
-            <span>📝 执行步骤 <el-tag size="small" type="info">{{ plan.steps?.length || 0 }} 步</el-tag></span>
-          </template>
+ <span> 执行步骤 <el-tag size="small" type="info">{{ plan.steps?.length || 0 }} 步</el-tag></span>           </template>
           
           <el-card class="plan-steps-card" shadow="never">
             <el-timeline>
@@ -87,8 +84,7 @@
         <!-- 确认点 Tab -->
         <el-tab-pane v-if="plan.checkpoints && plan.checkpoints.length > 0" name="checkpoints">
           <template #label>
-            <span>⚠️ 确认点 <el-tag size="small" type="warning">{{ plan.checkpoints.length }} 个</el-tag></span>
-          </template>
+ <span> 确认点 <el-tag size="small" type="warning">{{ plan.checkpoints.length }} 个</el-tag></span>           </template>
           
           <el-card class="plan-checkpoints-card" shadow="never">
             <div class="checkpoints-list">
@@ -100,8 +96,7 @@
               >
                 <div class="checkpoint-header">
                   <span class="checkpoint-name">
-                    {{ checkpoint.critical ? '🔴' : '⚠️' }}
-                    {{ checkpoint.name || `确认点 ${checkpoint.step_id}` }}
+ {{ checkpoint.critical ? '🔴' : '' }}                     {{ checkpoint.name || `确认点 ${checkpoint.step_id}` }}
                   </span>
                   <el-tag :type="checkpoint.critical ? 'danger' : 'warning'" size="small">
                     {{ checkpoint.critical ? '关键' : '普通' }}
@@ -127,8 +122,7 @@
         <!-- 风险提示 Tab -->
         <el-tab-pane v-if="plan.risk_points && plan.risk_points.length > 0" name="risks">
           <template #label>
-            <span>⚠️ 风险提示 <el-tag size="small" type="danger">{{ plan.risk_points.length }} 个</el-tag></span>
-          </template>
+ <span> 风险提示 <el-tag size="small" type="danger">{{ plan.risk_points.length }} 个</el-tag></span>           </template>
           
           <el-card class="plan-risks-card" shadow="never">
             <el-alert

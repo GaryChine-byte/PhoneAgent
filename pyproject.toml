@@ -1,127 +1,207 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "phoneagent"
-version = "1.0.0"
-description = "AI-powered Android automation platform - Next-generation super AI assistant"
-authors = [
-    {name = "PhoneAgent Team"}
-]
-license = {text = "AGPL-3.0"}
+version = "2.0.0"
+description = "AI-powered Android and PC automation platform with XML Kernel V3"
 readme = "README.md"
-requires-python = ">=3.10"
-keywords = ["ai", "android", "automation", "agent", "rpa"]
-
+requires-python = ">=3.9"
+license = {text = "AGPL-3.0"}
+authors = [
+    {name = "PhoneAgent Contributors"}
+]
+keywords = ["android", "automation", "ai", "adb", "agent"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: GNU Affero General Public License v3",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Topic :: Software Development :: Libraries :: Python Modules",
-    "Topic :: System :: Monitoring",
 ]
 
 dependencies = [
-    # Core dependencies (phone_agent)
-    "Pillow>=10.0.0",        # Image processing
-    "openai>=1.0.0",         # AI model SDK (ZhipuAI compatible)
-    
-    # Server dependencies  
-    "fastapi>=0.109.0",      # Web framework
-    "uvicorn[standard]>=0.27.0",  # ASGI server
-    "python-multipart>=0.0.6",    # File upload
-    "websockets>=12.0",      # WebSocket server
-    "python-dotenv>=1.0.0",  # Environment variables
-    "pydantic>=2.5.0",       # Data validation
-    "pydantic-settings>=2.1.0",   # Settings management
-    "pydub>=0.25.1",         # Audio processing (requires ffmpeg)
-    "httpx>=0.24.0",         # HTTP client
+    "fastapi>=0.100.0",
+    "uvicorn[standard]>=0.23.0",
+    "pydantic>=2.0.0",
+    "sqlalchemy>=2.0.0",
+    "httpx>=0.24.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.0.0",
-    "pytest-asyncio>=0.21.0",
-    "pytest-cov>=4.0.0",
     "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
     "mypy>=1.0.0",
-    "ruff>=0.1.0",
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-asyncio>=0.21.0",
     "pre-commit>=3.0.0",
 ]
 
-# Optional AI providers
-anthropic = ["anthropic>=0.18.0"]
-
 [project.urls]
 Homepage = "https://github.com/tmwgsicp/PhoneAgent"
-Documentation = "https://github.com/tmwgsicp/PhoneAgent/docs"
+Documentation = "https://github.com/tmwgsicp/PhoneAgent"
 Repository = "https://github.com/tmwgsicp/PhoneAgent"
-Issues = "https://github.com/tmwgsicp/PhoneAgent/issues"
+"Bug Reports" = "https://github.com/tmwgsicp/PhoneAgent/issues"
 
-[build-system]
-requires = ["setuptools>=68.0", "wheel"]
-build-backend = "setuptools.build_meta"
-
-[tool.setuptools.packages.find]
-include = ["phone_agent*", "server*"]
-exclude = ["tests*", "docs*", "scripts*"]
-
-[tool.setuptools.package-data]
-phone_agent = ["py.typed"]
-server = ["py.typed"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
-addopts = "-v --cov=phone_agent --cov=server --cov-report=html --cov-report=term"
-
+# ============================================================================
+# Black - Python代码格式化工具
+# ============================================================================
 [tool.black]
-line-length = 100
-target-version = ["py310", "py311", "py312"]
+line-length = 88
+target-version = ['py39', 'py310', 'py311']
 include = '\.pyi?$'
-exclude = '''
+extend-exclude = '''
 /(
-    \.git
-  | \.venv
-  | venv
+  # 默认排除目录
+  \.eggs
+  | \.git
+  | \.hg
   | \.mypy_cache
-  | \.pytest_cache
-  | __pycache__
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
   | build
   | dist
+  # 项目特定排除
   | node_modules
+  | venv
+  | temp
 )/
 '''
 
+# ============================================================================
+# isort - Import语句排序工具
+# ============================================================================
+[tool.isort]
+profile = "black"
+line_length = 88
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+ensure_newline_before_comments = true
+split_on_trailing_comma = true
+skip_gitignore = true
+
+# 定义项目的模块分组
+known_first_party = ["phone_agent", "server"]
+known_third_party = [
+    "fastapi",
+    "pydantic",
+    "sqlalchemy",
+    "httpx",
+    "pytest",
+]
+
+sections = [
+    "FUTURE",
+    "STDLIB",
+    "THIRDPARTY",
+    "FIRSTPARTY",
+    "LOCALFOLDER"
+]
+
+# 排除目录
+skip = [
+    ".git",
+    ".venv",
+    "venv",
+    "node_modules",
+    "__pycache__",
+    "build",
+    "dist",
+]
+
+# ============================================================================
+# mypy - 静态类型检查工具
+# ============================================================================
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.9"
 warn_return_any = true
 warn_unused_configs = true
-disallow_untyped_defs = false
+disallow_untyped_defs = false  # 逐步启用
+disallow_any_generics = false
+disallow_subclassing_any = false
+disallow_untyped_calls = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+# 忽略第三方库的类型检查
+[[tool.mypy.overrides]]
+module = [
+    "fastapi.*",
+    "pydantic.*",
+    "sqlalchemy.*",
+]
 ignore_missing_imports = true
 
-[tool.ruff]
-line-length = 100
-target-version = "py310"
-select = ["E", "F", "I", "N", "W"]
-ignore = ["E501"]  # Line too long
+# ============================================================================
+# pytest - 测试框架
+# ============================================================================
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
 
-[tool.ruff.per-file-ignores]
-"__init__.py" = ["F401"]  # Unused imports
+# 命令行选项
+addopts = [
+    "-v",                          # 详细输出
+    "--tb=short",                  # 简短的traceback
+    "--strict-markers",            # 严格的marker检查
+    "--strict-config",             # 严格的配置检查
+    "--cov=phone_agent",           # 覆盖率检查
+    "--cov=server",
+    "--cov-report=term-missing",   # 显示缺失覆盖的行
+    "--cov-report=html",           # 生成HTML报告
+    "--cov-fail-under=70",         # 覆盖率低于70%时失败
+]
 
+# 标记定义
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+    "e2e: marks tests as end-to-end tests",
+]
+
+# 忽略警告
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+
+# ============================================================================
+# coverage - 代码覆盖率工具
+# ============================================================================
 [tool.coverage.run]
 source = ["phone_agent", "server"]
 omit = [
     "*/tests/*",
-    "*/test_*",
+    "*/test_*.py",
     "*/__pycache__/*",
     "*/venv/*",
+    "*/node_modules/*",
 ]
 
 [tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+
 exclude_lines = [
     "pragma: no cover",
     "def __repr__",
@@ -129,5 +209,55 @@ exclude_lines = [
     "raise NotImplementedError",
     "if __name__ == .__main__.:",
     "if TYPE_CHECKING:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
 ]
 
+[tool.coverage.html]
+directory = "htmlcov"
+
+# ============================================================================
+# ruff - 快速Python linter (可选,替代flake8)
+# ============================================================================
+[tool.ruff]
+line-length = 88
+target-version = "py39"
+
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "C",    # flake8-comprehensions
+    "B",    # flake8-bugbear
+    "UP",   # pyupgrade
+]
+
+ignore = [
+    "E501",  # line too long (black处理)
+    "B008",  # do not perform function calls in argument defaults
+    "C901",  # too complex
+]
+
+exclude = [
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "node_modules",
+]
+
+[tool.ruff.per-file-ignores]
+"__init__.py" = ["F401"]  # 允许未使用的导入
+
+# ============================================================================
+# setuptools - 打包配置
+# ============================================================================
+[tool.setuptools]
+packages = ["phone_agent", "server"]
+
+[tool.setuptools.package-data]
+phone_agent = ["py.typed"]
+server = ["py.typed"]

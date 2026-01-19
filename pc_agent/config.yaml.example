@@ -1,0 +1,22 @@
+# PC Agent Client 配置文件示例
+# 复制此文件为 config.yaml 并修改相应配置
+
+# 服务器配置
+server:
+  ip: "your-server.com"           # 服务器地址
+  frp_port: 7000                   # FRP 服务器端口
+  token: "your-frp-token"          # FRP 认证 token
+  websocket_url: "wss://your-server.com/device-ws/device"  # 设备 WebSocket 地址（符合架构标准：/device-ws/）
+
+# 本地配置
+local_port: 8888                   # 本地控制服务器端口
+remote_port: 6200                  # FRP 远程端口 (PC设备使用 6200-6299 范围)
+
+# 设备信息
+device_name: "My PC"               # 设备名称
+
+# 屏幕流配置 (可选,暂未实现)
+screen_stream:
+  enabled: false                   # 是否启用屏幕流
+  fps: 10                          # 帧率
+  resolution: "1280x720"           # 分辨率

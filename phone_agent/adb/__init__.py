@@ -1,4 +1,8 @@
-"""ADB utilities for Android device interaction."""
+#!/usr/bin/env python3
+# Copyright (C) 2025 PhoneAgent Contributors
+# Licensed under AGPL-3.0
+
+"""Android设备交互的ADB工具集"""
 
 from phone_agent.adb.anti_detection import (
     AntiDetection,
@@ -46,7 +50,7 @@ __all__ = [
     "clear_text",
     "detect_and_set_adb_keyboard",
     "restore_keyboard",
-    # Smart Input (✨ 新增: 优先yadb)
+    # Smart Input ([NEW] 新增: 优先yadb)
     "smart_type_text",
     "reset_input_method",
     "get_input_method",

@@ -19,6 +19,37 @@
 
 ---
 
+## 📢 Latest Updates
+
+### 🎉 v2.0.0 - Major Update (January 2026)
+
+#### ⚡ XML Kernel V3 (Revolutionary Performance)
+- ✅ **10-20x Faster** - 1-3s/step vs 20-28s/step
+- ✅ **95% Cost Reduction** - $0.01/step vs $0.15/step
+- ✅ **92%+ Accuracy** - Close to Vision Kernel's 95%
+- ✅ **Smart Fallback** - Auto switch to Vision Kernel on XML failure
+- ✅ **Hybrid Agent** - Automatically selects optimal kernel
+
+#### 📱 Android Remote Control App (Replaces Termux)
+- ✅ **One-Click Install** - Download APK and install directly
+- ✅ **80% Faster Deployment** - 5-10 minutes (was 30-60 minutes)
+- ✅ **More Stable** - Built-in multi-layer keep-alive mechanisms
+- ✅ **All-in-One** - FRP + ADB + yadb + WebSocket integrated
+
+#### 🖥️ PC Agent Support
+- ✅ **Windows/macOS Control** - AI can operate computers
+- ✅ **Accessibility Tree** - Precise UI element recognition
+- ✅ **OCR Fusion** - Text recognition + IOU algorithm optimization
+
+#### 🔧 YADB Connection Optimization
+- ✅ **Improved Stability** - Optimized cache strategy and retry mechanism
+- ✅ **Smart Reconnect** - Auto detect and restore connection
+- ✅ **Monitoring Tools** - Connection monitoring scripts
+
+**📝 [View Full Details](README.md)**
+
+---
+
 ## ✨ Why PhoneAgent?
 
 > **Built on Open-AutoGLM, completing the last mile of engineering**
@@ -39,37 +70,46 @@
 
 ## 🎯 Project Features
 
-### 1. Smart Execution Engine + Dual Mode Support ⭐
+### 1. Smart Execution Engine + Three Kernels ⭐
 
-PhoneAgent uses advanced visual understanding technology with two execution modes:
+PhoneAgent uses advanced Hybrid Agent architecture with three execution kernels:
 
 ```
 ┌─────────────────────────────────────────────────────┐
 │            PhoneAgent Smart Execution Engine         │
 │                                                       │
 │  ┌────────────────────────────────────────────┐    │
-│  │       Step-by-Step Mode (Recommended)      │    │
+│  │       XML Kernel V3 (✅ Recommended)        │    │
 │  │                                              │    │
-│  │  • Stable & Reliable - AI thinks each step │    │
-│  │  • Vision Understanding - GLM-4.6v series   │    │
-│  │  • Complete Logs - JSONL format, traceable │    │
-│  │  • Real-time Feedback - WebSocket progress │    │
+│  │  • 10-20x Faster - 1-3s/step                │    │
+│  │  • 95% Cost Reduction - $0.01/step          │    │
+│  │  • 92%+ Accuracy - Suitable for most apps  │    │
+│  │  • UI Tree Based - Parse UIAutomator XML   │    │
 │  └────────────────────────────────────────────┘    │
 │                                                       │
 │  ┌────────────────────────────────────────────┐    │
-│  │    Smart Planning Mode (⚠️ Beta - Unstable) │    │
+│  │       Vision Kernel (Stable & Reliable)    │    │
 │  │                                              │    │
-│  │  • Pre-planning - AI generates full plan    │    │
-│  │  • Batch Execution - 70% faster, 70% cheaper│    │
-│  │  ⚠️ Low Success Rate - Not for production   │    │
-│  │  ⚠️ Only for simple task testing            │    │
+│  │  • Vision Understanding - GLM-4.6v series   │    │
+│  │  • 95% Accuracy - Highest precision         │    │
+│  │  • Universal - Suitable for complex UI     │    │
+│  │  • Complete Logs - JSONL format, traceable │    │
+│  └────────────────────────────────────────────┘    │
+│                                                       │
+│  ┌────────────────────────────────────────────┐    │
+│  │       Hybrid Agent (Smart Selection)       │    │
+│  │                                              │    │
+│  │  • Auto Switch - XML first, Vision fallback│    │
+│  │  • Best Balance - Speed, cost and accuracy │    │
+│  │  • Real-time Feedback - WebSocket progress │    │
 │  └────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────┘
 ```
 
-**Execution Modes**:
-- **Step-by-Step (✅ Recommended)**: AI decides each step, suitable for all tasks, highly stable
-- **Smart Planning (⚠️ Beta, Unstable)**: Pre-plans complete steps, faster, but low success rate, only for simple testing
+**Execution Kernel Selection**:
+- **XML Kernel (✅ Recommended)**: Fast and cost-effective, suitable for most apps
+- **Vision Kernel (Stable)**: Highest accuracy, suitable for complex UI and XML failures
+- **Hybrid Agent (Smart)**: Automatically selects optimal kernel, recommended for production
 
 ### 2. Real-time Screen Preview
 
@@ -106,7 +146,7 @@ PhoneAgent uses **Dual WebSocket Service** architecture:
              ↓                 ↓                  ↓           ↓
     ┌────────────────┐ ┌─────────────────┐ ┌──────────┐ ┌──────────┐
     │  API Server     │ │ WebSocket Server│ │FRP Server│ │  Device  │
-    │   (Port 8000)   │ │   (Port 9999)   │ │(Port 7000)│ │ (Termux) │
+    │   (Port 8000)   │ │   (Port 9999)   │ │(Port 7000)│ │(Remote)  │
     │                 │ │                 │ │          │ │          │
     │ • REST API      │ │ • Device Mgmt   │ │ • ADB Fwd│ │ • ADB Run│
     │ • Frontend WS   │ │ • Task Dispatch │ │ • Port   │ │ • Status │
@@ -167,7 +207,7 @@ PhoneAgent uses **Dual WebSocket Service** architecture:
 </table>
 </div>
 
-**Positioning**: Optional voice interaction interface, works with Termux
+**Positioning**: Optional voice interaction interface, works with PhoneAgent Remote
 
 **Features**:
 - 🎙️ Voice Wake-up - "Hello BT" to activate
@@ -242,8 +282,8 @@ PhoneAgent uses **Dual WebSocket Service** architecture:
   - `6100-6199` - FRP client port range (1 port per device)
 
 **Android Device**:
-- Android 7.0+, USB debugging enabled
-- Termux installed (from [F-Droid](https://f-droid.org/packages/com.termux/))
+- Android 5.0+, USB debugging enabled
+- Download and install PhoneAgent Remote APK (see client deployment below)
 
 ### 10-Minute Deployment
 
@@ -261,17 +301,26 @@ nano .env  # Fill in ZHIPU_API_KEY
 sudo bash scripts/install/install_server.sh
 ```
 
-#### 2️⃣ Client (Termux)
+#### 2️⃣ Client (PhoneAgent Remote)
 
-```bash
-bash <(curl -s https://cdn.jsdelivr.net/gh/tmwgsicp/PhoneAgent@main/client/install_termux.sh)
-```
+**Download and Install APK**:
 
-**Installation requires 4 parameters**:
-1. Backend server IP
-2. FRP Token (same as server)
-3. Connection mode (1=Direct IP / 2=Domain proxy)
-4. Frontend access address (IP or domain)
+1. Go to [Releases page](https://github.com/tmwgsicp/PhoneAgent/releases/latest) to download the latest version
+2. Install on Android device (supports Android 5.0+)
+
+**Configure Application**:
+
+Open the app and fill in the following information:
+
+| Configuration | Description | Example |
+|--------------|-------------|---------|
+| **Backend Server IP** | IP address of PhoneAgent server | `192.168.1.100` |
+| **FRP Token** | Must match server configuration | (fill in your token) |
+| **FRP Remote Port** | Unique port for each device | `6100`, `6101`, etc. |
+| **WebSocket Connection Mode** | Recommended: "Direct IP Mode" | Direct IP Mode |
+| **Domain Address** (Optional) | Only needed for domain proxy mode | `phoneagent.example.com` |
+
+Click "Save and Start".
 
 **⚠️ Important First-Time Setup** (Must execute, otherwise unable to connect):
 
@@ -327,6 +376,7 @@ adb tcpip 5555
 **Notes**:
 - This configuration **will reset after phone reboot**, need to re-execute
 - If not executed, server will show device `offline`
+- Detailed usage instructions can be found in [android-remote-control/README.md](android-remote-control/README.md)
 
 #### 3️⃣ Frontend
 
@@ -408,8 +458,9 @@ See configuration guide (Environment Variables Configuration section)
 | **Frontend** | Vue 3 + Vite + Element Plus + Pinia |
 | **Backend** | FastAPI + SQLite + WebSocket + FRP |
 | **AI** | AutoGLM-Phone / GLM-4.6v series / OpenAI-Compatible |
-| **Terminal** | Termux + ADB + Scrcpy |
-| **Execution Engine** | Step-by-Step + Smart Planning (Beta) |
+| **Mobile Client** | PhoneAgent Remote (Android) + ADB + Scrcpy + yadb |
+| **PC Client** | pywinauto (Windows) / PyObjC (macOS) + OCR |
+| **Execution Engine** | XML Kernel V3 + Vision Kernel + Hybrid Agent |
 
 ---
 
@@ -478,6 +529,42 @@ Due to limited personal bandwidth, currently **not accepting PRs**, but very wel
 - 📖 **Improvement Suggestions** - Propose documentation and feature improvements via Issues
 - ⭐ **Star Support** - Give the project a Star, let more people see it
 
+---
+
+## 🧪 Experimental Features
+
+<details>
+<summary><b>🖥️ PC Agent - Remote PC Control (Click to expand)</b></summary>
+
+<br>
+
+PC Agent allows AI to control your Windows/macOS computer through the server for office automation, software testing, and more.
+
+### Features
+
+- ✅ **Cross-platform** - Windows and macOS
+- ✅ **Accessibility Tree** - Get UI element information
+- ✅ **Basic Operations** - Click, type, screenshot
+- ✅ **Remote Control** - FRP tunneling + WebSocket registration
+
+### Use Cases
+
+- 💼 Office automation (forms, emails)
+- 🧪 Software automated testing
+- 🎮 Game assistance (offline only)
+
+### Status
+
+⚠️ **Experimental Feature** - For testing only, not recommended for production
+
+### Documentation
+
+See [PC Agent Full Documentation](pc_agent/README.md)
+
+</details>
+
+---
+
 ### Contact
 
 <table>
@@ -523,7 +610,7 @@ The following open-source projects provide technical support for this project:
 - **[Vue.js](https://vuejs.org/)** - Frontend framework
 - **[FastAPI](https://fastapi.tiangolo.com/)** - Backend framework
 - **[Element Plus](https://element-plus.org/)** - UI component library
-- **[Termux](https://termux.dev/)** - Android terminal
+- **[Termux](https://termux.dev/)** - Android terminal environment (used for Remote client)
 
 Thanks to all open-source contributors! 🙏
 

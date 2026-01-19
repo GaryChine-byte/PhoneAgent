@@ -102,8 +102,7 @@ def get_model_config_from_env(kernel_mode: Optional[str] = None) -> Dict[str, An
         model_name = Config.CUSTOM_MODEL_NAME
         logger.info(f"使用自定义模型: {model_name} (所有内核)")
     elif kernel_mode:
-        # ✅ 使用智能模型选择器（支持 XML_KERNEL_MODEL 等环境变量）
-        from phone_agent.model.selector import select_model_for_kernel
+ # 使用智能模型选择器（支持 XML_KERNEL_MODEL 等环境变量）         from phone_agent.model.selector import select_model_for_kernel
         model_name = select_model_for_kernel(kernel_mode)
         logger.info(f"智能选择模型: {kernel_mode} → {model_name}")
     else:

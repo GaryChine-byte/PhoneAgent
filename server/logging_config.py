@@ -139,13 +139,13 @@ def setup_logging(
     # 记录日志系统初始化信息
     logger = logging.getLogger(__name__)
     logger.info("=" * 60)
-    logger.info("📝 日志系统已初始化")
+    logger.info(" 日志系统已初始化")
     logger.info(f"   日志级别: {log_level}")
     logger.info(f"   日志目录: {log_dir_path.absolute()}")
     if enable_file:
         logger.info(f"   主日志文件: {log_file}")
         logger.info(f"   错误日志文件: error.log")
-        logger.info(f"   文件轮转: {max_bytes / 1024 / 1024:.0f}MB, 保留{backup_count}个")
+    logger.info(f"   文件轮转: {max_bytes / 1024 / 1024:.0f}MB, 保留{backup_count}个")
     logger.info("=" * 60)
 
 

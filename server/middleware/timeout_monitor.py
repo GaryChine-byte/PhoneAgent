@@ -1,3 +1,7 @@
+#!/usr/bin/env python3
+# Copyright (C) 2025 PhoneAgent Contributors
+# Licensed under AGPL-3.0
+
 """
 请求超时监控中间件
 监控和记录所有API请求的耗时，识别慢请求
@@ -85,8 +89,7 @@ class TimeoutMonitorMiddleware(BaseHTTPMiddleware):
             log_level = logging.WARNING if request_time > self.slow_request_threshold else logging.DEBUG
             logger.log(
                 log_level,
-                f"{'⚠️ SLOW' if request_time > self.slow_request_threshold else '✅'} "
-                f"{endpoint} - {request_time:.3f}s"
+ f"{' SLOW' if request_time > self.slow_request_threshold else ''} "                 f"{endpoint} - {request_time:.3f}s"
             )
             
             return response
@@ -97,8 +100,7 @@ class TimeoutMonitorMiddleware(BaseHTTPMiddleware):
             self._update_stats(endpoint, request_time, success=False)
             
             logger.error(
-                f"❌ {endpoint} - {request_time:.3f}s - ERROR: {str(e)}"
-            )
+ f" {endpoint} - {request_time:.3f}s - ERROR: {str(e)}"             )
             raise
             
         finally:
@@ -136,8 +138,7 @@ class TimeoutMonitorMiddleware(BaseHTTPMiddleware):
             stats['last_slow_requests'].pop(0)
         
         logger.warning(
-            f"⚠️ 慢请求告警: {endpoint} 耗时 {request_time:.2f}秒 "
-            f"(阈值: {self.slow_request_threshold}秒)"
+ f" 慢请求告警: {endpoint} 耗时 {request_time:.2f}秒 "             f"(阈值: {self.slow_request_threshold}秒)"
         )
     
     def get_stats(self) -> dict:

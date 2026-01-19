@@ -69,19 +69,19 @@ def smart_type_text(
     methods = ["yadb", "adb_keyboard"]
     
     for method in methods:
-        logger.info(f"🔄 尝试输入方法: {method}")
+        logger.info(f"[UPDATE] 尝试输入方法: {method}")
         success = _execute_input(text, device_id, method)
         
         if success:
             # 成功！记住这个方法
             _device_input_methods[device_key] = method
-            logger.info(f"✅ {method} 成功，已缓存")
+            logger.info(f"[OK] {method} 成功，已缓存")
             return True
         
         logger.debug(f"{method} 失败，尝试下一个...")
     
     # 所有方法都失败
-    logger.error("❌ 所有输入方法都失败")
+    logger.error("[X] 所有输入方法都失败")
     return False
 
 
@@ -112,7 +112,7 @@ def _try_yadb_input(text: str, device_id: Optional[str]) -> bool:
         success = yadb_type_text(text, device_id)
         
         if success:
-            logger.debug(f"✅ yadb输入成功: {text[:30]}...")
+            logger.debug(f"[OK] yadb输入成功: {text[:30]}...")
             return True
         
         return False
@@ -137,21 +137,21 @@ def _try_adb_keyboard_input(text: str, device_id: Optional[str]) -> bool:
         
         # 切换到ADB Keyboard
         original_ime = detect_and_set_adb_keyboard(device_id)
-        time.sleep(0.3)  # ✅ 缩短延迟 (原1秒)
+        time.sleep(0.3)  # [OK] 缩短延迟 (原1秒)
         
         # 清空文本
         clear_text(device_id)
-        time.sleep(0.2)  # ✅ 缩短延迟 (原1秒)
+        time.sleep(0.2)  # [OK] 缩短延迟 (原1秒)
         
         # 输入文本
         adb_type_text(text, device_id)
-        time.sleep(0.5)  # ✅ 缩短延迟 (原1秒)
+        time.sleep(0.5)  # [OK] 缩短延迟 (原1秒)
         
         # 恢复键盘
         restore_keyboard(original_ime, device_id)
-        time.sleep(0.2)  # ✅ 缩短延迟 (原1秒)
+        time.sleep(0.2)  # [OK] 缩短延迟 (原1秒)
         
-        logger.debug(f"✅ ADB Keyboard输入成功: {text[:30]}...")
+        logger.debug(f"[OK] ADB Keyboard输入成功: {text[:30]}...")
         return True
         
     except Exception as e:

@@ -30,20 +30,26 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class DeviceInfo:
-    """设备信息"""
+    """
+    设备信息
+    
+    支持 Android 和 PC 设备
+    """
     device_id: str
     device_name: str
-    model: str
-    android_version: str
-    screen_resolution: str
-    frp_port: int
-    connected_at: datetime
-    last_heartbeat: datetime
+    device_type: str = "android"  # android 或 pc
+    model: str = "unknown"
+    android_version: str = "unknown"  # PC 设备为操作系统版本
+    screen_resolution: str = "unknown"
+    frp_port: int = 0
+    connected_at: datetime = None
+    last_heartbeat: datetime = None
     status: str = "online"  # online, offline, busy
     battery: int = 100
     network: str = "unknown"
     frp_connected: bool = False
     ws_connected: bool = False  # WebSocket连接状态
+    os_info: dict = None  # PC 设备的操作系统信息
 
 
 class DeviceManager:
@@ -95,32 +101,45 @@ class DeviceManager:
                 device.ws_connected = True  # WebSocket已连接
                 device.battery = info.get("battery", device.battery)
                 device.network = info.get("network", device.network)
-                logger.info(f"Device reconnected: {device_id}, status set to online, FRP: {frp_connected}")
                 
-                # 设备重连时也执行初始化（确保 yadb 等工具就绪）
-                if frp_connected and frp_port:
+                # ✅ 修复：重连时也更新 device_type 和 os_info（防止 DeviceScanner 误判）
+                if "device_type" in info:
+                    device.device_type = info["device_type"]
+                if "os_info" in info:
+                    device.os_info = info["os_info"]
+                if "device_name" in info:
+                    device.device_name = info["device_name"]
+                
+                logger.info(f"Device reconnected: {device_id}, Type: {device.device_type}, status set to online, FRP: {frp_connected}")
+                
+                # 设备重连时也执行初始化（确保 yadb 等工具就绪）- 仅 Android 设备
+                if device.device_type == "android" and frp_connected and frp_port:
                     asyncio.create_task(self._initialize_device_background(device_id, frp_port))
             else:
                 # 新设备注册
+                device_type = info.get("device_type", "android")
+                
                 self.devices[device_id] = DeviceInfo(
                     device_id=device_id,
                     device_name=info.get("device_name", device_id),
+                    device_type=device_type,
                     model=info.get("model", "unknown"),
                     android_version=info.get("android_version", "unknown"),
                     screen_resolution=info.get("screen_resolution", "unknown"),
                     frp_port=frp_port,
                     connected_at=datetime.now(timezone.utc),
                     last_heartbeat=datetime.now(timezone.utc),
-                    status="online",  # ← 新设备也是online
+                    status="online",
                     battery=info.get("battery", 100),
                     network=info.get("network", "unknown"),
                     frp_connected=frp_connected,
-                    ws_connected=True  # WebSocket已连接
+                    ws_connected=True,
+                    os_info=info.get("os_info", None)  # PC 设备的操作系统信息
                 )
-                logger.info(f"Device registered: {device_id} ({self.devices[device_id].device_name}), FRP: {frp_connected}")
+                logger.info(f"Device registered: {device_id} ({self.devices[device_id].device_name}), Type: {device_type}, FRP: {frp_connected}")
                 
-                # 新设备注册时执行初始化
-                if frp_connected and frp_port:
+                # 新设备注册时执行初始化 (仅 Android 设备需要)
+                if device_type == "android" and frp_connected and frp_port:
                     asyncio.create_task(self._initialize_device_background(device_id, frp_port))
             
             # 初始化任务集合
@@ -132,10 +151,20 @@ class DeviceManager:
         后台初始化设备（异步任务）
         
         在设备注册后立即执行：
-        - 推送 yadb 工具到设备
+        - 推送 yadb 工具到设备（仅首次注册）
         - 其他初始化操作
-        """
+        
+ 优化：避免重复初始化，减少超时等待         """
         try:
+            # 检查是否已经初始化过（避免重复初始化）
+            if not hasattr(self, '_initialized_devices'):
+                self._initialized_devices = set()
+            
+            # 如果已经初始化过，跳过
+            if device_id in self._initialized_devices:
+                logger.debug(f"⏭️  Device {device_id} already initialized, skipping...")
+                return
+            
             from phone_agent.core.device_init import initialize_device
             
             logger.info(f"⏳ Starting background initialization for {device_id}...")
@@ -144,32 +173,100 @@ class DeviceManager:
                 device_id=device_id,
                 adb_host="localhost",
                 adb_port=frp_port,
-                push_yadb=True  # 自动推送 yadb
+                check_yadb=True  # 只检查 yadb，不推送安装（由 Android app 预装）
             )
             
             if success:
-                logger.info(f"✅ Background initialization completed for {device_id}")
+                logger.info(f"Background initialization completed for {device_id}")
+                self._initialized_devices.add(device_id)
             else:
-                logger.warning(f"⚠️  Background initialization had warnings for {device_id}")
+                logger.warning(f"Background initialization had warnings for {device_id}")
+                # 即使失败也标记为已尝试，避免重复尝试
+                self._initialized_devices.add(device_id)
                 
         except Exception as e:
-            logger.error(f"❌ Background initialization failed for {device_id}: {e}", exc_info=True)
+            logger.error(f"Background initialization failed for {device_id}: {e}", exc_info=True)
+            # 标记为已尝试，避免重复尝试
+            if hasattr(self, '_initialized_devices'):
+                self._initialized_devices.add(device_id)
     
     async def unregister_device(self, device_id: str):
-        """注销设备"""
+        """注销设备并释放资源"""
         async with self._lock:
-            if device_id in self.connections:
-                del self.connections[device_id]
-            
+            # 获取设备的 FRP 端口
+            frp_port = None
             if device_id in self.devices:
+                frp_port = self.devices[device_id].frp_port
                 self.devices[device_id].status = "offline"
                 self.devices[device_id].ws_connected = False  # WebSocket已断开
-                logger.info(f"Device unregistered: {device_id}")
+            logger.info(f"Device unregistered: {device_id} (FRP port: {frp_port})")
+            
+            # 删除 WebSocket 连接
+            if device_id in self.connections:
+                del self.connections[device_id]
             
             # 清理任务分配
             if device_id in self.device_tasks:
                 del self.device_tasks[device_id]
+        
+        # 释放 ADB 连接和 FRP 端口（在锁外执行，避免阻塞）
+        if frp_port:
+            await self._cleanup_device_resources(device_id, frp_port)
     
+    async def _cleanup_device_resources(self, device_id: str, frp_port: int):
+        """清理设备资源：断开 ADB 连接（仅手机设备）"""
+        try:
+            # 检查设备类型，PC 设备不需要清理 ADB
+            device_type = "phone"  # 默认
+            if device_id in self.devices:
+                device_type = self.devices[device_id].device_type
+            
+            if device_type == "pc":
+                logger.info(f"🧹 Cleaning up resources for {device_id} (PC device, skip ADB cleanup)")
+                # PC 设备只需要释放端口
+                try:
+                    port_manager = get_port_manager()
+                    await port_manager.release_port(port=frp_port)
+                    logger.info(f"Port {frp_port} released from port manager")
+                except Exception as e:
+                    logger.debug(f"Failed to release port {frp_port}: {e}")
+                logger.info(f"Resource cleanup completed for {device_id}")
+                return
+            
+            # 手机设备：清理 ADB 连接
+            adb_address = f"localhost:{frp_port}"
+            logger.info(f"🧹 Cleaning up resources for {device_id} (ADB: {adb_address})")
+            
+            # 1. 断开 ADB 连接
+            try:
+                result = await asyncio.create_subprocess_exec(
+                    "adb", "disconnect", adb_address,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                stdout, stderr = await asyncio.wait_for(result.communicate(), timeout=5)
+                
+                if result.returncode == 0:
+                    logger.info(f"ADB disconnected: {adb_address}")
+                else:
+                    logger.warning(f"ADB disconnect failed: {stderr.decode()}")
+            except asyncio.TimeoutError:
+                logger.warning(f"ADB disconnect timeout: {adb_address}")
+            except Exception as e:
+                logger.warning(f"ADB disconnect error: {e}")
+            # 2. 可选：通知端口管理器释放端口（如果有端口管理器）
+            try:
+                from server.services.port_manager import get_port_manager
+                port_manager = get_port_manager()
+                # 使用 port 参数释放端口
+                await port_manager.release_port(port=frp_port)
+                logger.info(f"Port {frp_port} released from port manager")
+            except Exception as e:
+                logger.debug(f"Port manager not available or release failed: {e}")
+            
+            logger.info(f"Resource cleanup completed for {device_id}")
+        except Exception as e:
+            logger.error(f"Failed to cleanup resources for {device_id}: {e}")     
     async def send_command(self, device_id: str, command: dict):
         """向设备发送命令"""
         if device_id not in self.connections:
@@ -303,15 +400,24 @@ async def device_websocket(websocket: WebSocket, frp_port: int):
             "timestamp": datetime.now(timezone.utc).isoformat()
         })
         
-        logger.info(f"Device registered: {device_id} (port: {frp_port}, name: {specs.get('device_name', 'unknown')})")
+        logger.info(f"Device registered: {device_id} (port: {frp_port}, name: {specs.get('device_name', 'unknown')}, type: {specs.get('device_type', 'unknown')})")
         
-        # 消息循环（V2: 移除了心跳处理，只处理任务相关消息）
+        # 消息循环（支持心跳 + 任务消息）
         while True:
             data = await websocket.receive_json()
             message_type = data.get("type")
             
             # 处理不同类型的消息
-            if message_type == "task_progress":
+            if message_type == "ping":
+                # 心跳请求，响应 pong
+                await websocket.send_json({"type": "pong"})
+                logger.debug(f"💓 Heartbeat from {device_id}")
+            
+            elif message_type == "pong":
+                # 心跳响应
+                logger.debug(f"💓 Heartbeat response from {device_id}")
+            
+            elif message_type == "task_progress":
                 # 转发任务进度（给 API 服务器）
                 logger.info(f"Task progress from {device_id} (port: {frp_port}): {data}")
                 # TODO: 推送到任务管理系统
@@ -362,24 +468,37 @@ async def health():
 
 @app.get("/devices")
 async def get_devices():
-    """获取WebSocket连接的设备列表"""
+    """获取WebSocket连接的设备列表（实时状态）"""
     devices = []
     
     for device_id, device_info in device_manager.devices.items():
+        # ✅ 核心修复：实时查询 WebSocket 连接状态
+        ws_connected = device_id in device_manager.connections
+        
+        # ✅ 根据设备类型动态计算状态
+        if device_info.device_type == "pc":
+            # PC 设备：只看 WebSocket 连接
+            status = "online" if ws_connected else "offline"
+        else:
+            # 手机设备：需要双连接（WebSocket + FRP/ADB）
+            status = "online" if (ws_connected and device_info.frp_connected) else "offline"
+        
         device_data = {
             "device_id": device_info.device_id,
             "device_name": device_info.device_name,
+            "device_type": device_info.device_type,
             "model": device_info.model,
             "android_version": device_info.android_version,
             "screen_resolution": device_info.screen_resolution,
             "battery": device_info.battery,
             "network": device_info.network,
-            "status": device_info.status,
+            "status": status,  # ✅ 实时计算的状态
             "frp_connected": device_info.frp_connected,
-            "ws_connected": device_info.ws_connected,
+            "ws_connected": ws_connected,  # ✅ 实时查询的连接状态
             "connected_at": device_info.connected_at.isoformat() if device_info.connected_at else None,
             "last_heartbeat": device_info.last_heartbeat.isoformat() if device_info.last_heartbeat else None,
-            "frp_port": device_info.frp_port
+            "frp_port": device_info.frp_port,
+            "os_info": device_info.os_info
         }
         devices.append(device_data)
     
@@ -392,25 +511,34 @@ async def get_devices():
 
 @app.get("/devices/{device_id}")
 async def get_device(device_id: str):
-    """获取特定设备的详细信息"""
+    """获取特定设备的详细信息（实时状态）"""
     if device_id not in device_manager.devices:
         raise HTTPException(status_code=404, detail="Device not found")
     
     device_info = device_manager.devices[device_id]
-    is_connected = device_id in device_manager.connections
+    
+    # ✅ 实时查询 WebSocket 连接状态
+    ws_connected = device_id in device_manager.connections
+    
+    # ✅ 根据设备类型动态计算状态
+    if device_info.device_type == "pc":
+        status = "online" if ws_connected else "offline"
+    else:
+        status = "online" if (ws_connected and device_info.frp_connected) else "offline"
     
     return {
         "device_id": device_info.device_id,
         "device_name": device_info.device_name,
+        "device_type": device_info.device_type,
         "model": device_info.model,
         "android_version": device_info.android_version,
         "screen_resolution": device_info.screen_resolution,
         "battery": device_info.battery,
         "network": device_info.network,
-        "status": device_info.status,
+        "status": status,  # ✅ 实时计算的状态
         "frp_connected": device_info.frp_connected,
-        "ws_connected": device_info.ws_connected,
-        "is_connected": is_connected,
+        "ws_connected": ws_connected,  # ✅ 实时查询的连接状态
+        "os_info": device_info.os_info,
         "connected_at": device_info.connected_at.isoformat() if device_info.connected_at else None,
         "last_heartbeat": device_info.last_heartbeat.isoformat() if device_info.last_heartbeat else None,
         "frp_port": device_info.frp_port,
@@ -452,25 +580,44 @@ async def get_connections():
 
 
 async def auto_connect_devices():
-    """服务启动时自动连接已知设备"""
-    logger.info("开始自动连接ADB设备...")
+    """
+    服务启动时自动连接已知设备
     
-    # 扫描 FRP 端口 6100-6110
+    功能：WebSocket 服务器重启后，快速恢复 ADB 连接（仅针对手机设备）
+    配合：DeviceScanner 每 10 秒持续扫描，两者互为补充
+    
+    注意：
+    - 此函数在 WebSocket 服务器启动时执行一次，快速恢复连接
+    - DeviceScanner 在 API 服务器中运行，持续监控设备状态
+    - 设备通过 WebSocket 主动发送 device_online 消息注册
+    - ✅ 只对手机设备（6100-6199）尝试 ADB 连接
+    - ✅ PC 设备（6200-6299）通过 WebSocket 注册，无需 ADB
+    """
+    logger.info("📡 WebSocket 服务器启动，尝试恢复 ADB 连接...")     
+    # 扫描手机设备端口范围（与 DeviceScanner 保持一致）
+    MOBILE_PORT_START = 6100
+    MOBILE_PORT_END = 6199
+    
     connected_count = 0
-    for port in range(6100, 6111):
+    checked_ports = 0
+    
+    # 快速扫描前 20 个手机设备端口（最常用的范围）
+    # 完整扫描由 DeviceScanner 负责（每 10 秒）
+    for port in range(MOBILE_PORT_START, min(MOBILE_PORT_START + 20, MOBILE_PORT_END + 1)):
+        checked_ports += 1
         try:
             # 检查端口是否有FRP监听
             result = subprocess.run(
-                ["netstat", "-tlnp"],
+                ["netstat", "-tln"],
                 capture_output=True,
                 text=True,
                 timeout=2
             )
             
-            if f":{port}" in result.stdout:
-                # 尝试连接
+            if f":{port}" in result.stdout and "LISTEN" in result.stdout:
+                # 发现手机设备 FRP 端口，尝试 ADB 连接
                 device_addr = f"localhost:{port}"
-                logger.info(f"尝试连接设备: {device_addr}")
+                logger.info(f"  📱 发现手机设备 FRP 端口: {port}")
                 
                 connect_result = subprocess.run(
                     ["adb", "connect", device_addr],
@@ -481,26 +628,35 @@ async def auto_connect_devices():
                 
                 output = connect_result.stdout.lower()
                 if "connected" in output or "already connected" in output:
-                    logger.info(f"✅ 设备连接成功: {device_addr}")
+                    logger.info(f"✅ 恢复 ADB 连接: {device_addr}")
                     connected_count += 1
                 else:
-                    logger.warning(f"设备连接失败: {device_addr} - {connect_result.stdout}")
-                    
+                    logger.debug(f"连接失败: {device_addr}")
         except Exception as e:
             logger.debug(f"端口 {port} 检查失败: {e}")
             continue
     
-    if connected_count > 0:
-        logger.info(f"✅ 自动连接了 {connected_count} 个设备")
-    else:
-        logger.info("没有检测到可连接的设备")
-
-
+    logger.info(f"快速扫描完成: 检查了 {checked_ports} 个端口，恢复了 {connected_count} 个 ADB 连接")
+    logger.info("DeviceScanner 会在 10 秒内进行完整扫描并更新设备状态")
+    if connected_count == 0:
+        logger.info("如果有设备在线，它们会通过 WebSocket 主动连接并注册") 
 @app.on_event("startup")
 async def startup_event():
     """应用启动事件"""
     # V2: 不再需要心跳超时检测，WebSocket 使用原生 ping/pong 机制
-    logger.info("✅ WebSocket 服务器启动完成（使用原生 ping/pong 机制，ping_interval=30s）")
+    logger.info(" WebSocket 服务器启动完成（使用原生 ping/pong 机制，ping_interval=30s）")     
+    # 【重要】清理残留的 ADB 连接（WebSocket 服务器重启后）
+    try:
+        from server.services.port_manager import get_port_manager
+        port_manager = get_port_manager()
+        await port_manager.cleanup_all_adb_connections()
+        logger.info(" ADB connections cleaned up in WebSocket server")
+    except Exception as e:
+     logger.warning(f" Failed to cleanup ADB connections: {e}")     
+    # 快速恢复 ADB 连接（与 DeviceScanner 互补）
+    # - auto_connect_devices: 服务器重启时立即恢复（扫描前 20 个端口）
+    # - DeviceScanner: 持续监控所有端口（每 10 秒扫描 6100-6199）
+    await auto_connect_devices()
 
 
 if __name__ == "__main__":
