@@ -1,14 +1,24 @@
 #!/bin/bash
-# Installation script for low-spec server deployment
 
-# Update package list
+# Lightweight installation script for low-spec servers
+echo "Starting lightweight installation..."
+
+# Update package lists
+echo "Updating package lists..."
 sudo apt-get update
 
-# Install necessary packages
-echo "Installing required packages..."
-sudo apt-get install -y package1 package2
+# Install essential packages
+echo "Installing essential packages..."
+sudo apt-get install -y \
+    curl \
+    git \
+    python3 \
+    python3-pip \
+    # Add other necessary packages here, excluding FFmpeg and Scrcpy.
 
-# Additional installation steps
-#...
+# Mark video streaming features as unavailable
+echo "Video streaming features are unavailable in this installation."
 
-echo "Installation complete!"
+# Additional setup steps can be included here.
+
+echo "Lightweight installation completed."
